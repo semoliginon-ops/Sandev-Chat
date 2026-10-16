@@ -17,10 +17,8 @@ static llama_model * g_model = nullptr;
 static llama_context * g_ctx = nullptr;
 static int g_ctx_size = 768;
 // Exact shared prompt prefix from the previous turn; reset whenever the model changes.
-static std::vector<llama_token> g_cached_prompt_tokens;
 
 static void unload_locked() {
-    g_cached_prompt_tokens.clear();
     if (g_ctx) { llama_free(g_ctx); g_ctx = nullptr; }
     if (g_model) { llama_model_free(g_model); g_model = nullptr; }
 }
@@ -54,7 +52,7 @@ Java_com_sandev_chat_NativeLlama_loadModel(JNIEnv * env, jclass, jstring jpath, 
     g_ctx_size = std::max(256, std::min(1024, static_cast<int>(contextLength)));
     llama_context_params context_params = llama_context_default_params();
     context_params.n_ctx = static_cast<uint32_t>(g_ctx_size);
-    context_params.n_batch = static_cast<uint32_t>(std::min(512, g_ctx_size));
+    context_params.n_batch = static_cast<uint32_t>(std::min(128, g_ctx_size));
     context_params.n_threads = std::max(1, std::min(4, static_cast<int>(threads)));
     context_params.n_threads_batch = context_params.n_threads;
     g_ctx = llama_init_from_model(g_model, context_params);
@@ -177,46 +175,37 @@ Java_com_sandev_chat_NativeLlama_generate(JNIEnv * env, jclass, jstring jprompt,
     tokens.resize(static_cast<size_t>(n_prompt));
     const auto tokenized_at = std::chrono::steady_clock::now();
 
-    // Bound prompt work and generation so a phone with 6 GB RAM responds predictably.
-    const size_t max_prompt_tokens = std::min<size_t>(480, g_ctx_size > 80 ? g_ctx_size - 80 : g_ctx_size - 1);
+    // Controlled latency test aligned with the known-good Luna runtime:
+    // retain system/persona plus the newest request, cap prompt work at 96 tokens.
+    const size_t max_prompt_tokens = 96;
     if (tokens.size() > max_prompt_tokens) {
-        return env->NewStringUTF("PROMPT_TOO_LONG: riwayat chat terlalu panjang; mulai percakapan baru atau kurangi context.");
+        const size_t head_count = 48;
+        const size_t tail_count = max_prompt_tokens - head_count;
+        std::vector<llama_token> compact;
+        compact.reserve(max_prompt_tokens);
+        compact.insert(compact.end(), tokens.begin(), tokens.begin() + head_count);
+        compact.insert(compact.end(), tokens.end() - tail_count, tokens.end());
+        tokens.swap(compact);
     }
 
-    // Reuse only an exact token prefix. Remove the previous assistant answer and
-    // changed suffix from the KV cache, then decode only the prompt tokens we need.
+    // Deliberately clear KV state each turn for this baseline; remove cache reuse
+    // as a variable while diagnosing the very slow Sandev responses.
     llama_memory_t memory = llama_get_memory(g_ctx);
-    size_t common_prefix = 0;
-    while (common_prefix < tokens.size() &&
-           common_prefix < g_cached_prompt_tokens.size() &&
-           tokens[common_prefix] == g_cached_prompt_tokens[common_prefix]) {
-        ++common_prefix;
-    }
-    // Re-decode the final prompt token so sampler logits reflect this full prompt.
-    if (common_prefix >= tokens.size() && common_prefix > 0) --common_prefix;
-    if (common_prefix == 0 || !llama_memory_seq_rm(memory, 0, static_cast<llama_pos>(common_prefix), -1)) {
+    llama_memory_clear(memory, true);
+    llama_batch batch = llama_batch_get_one(tokens.data(), static_cast<int32_t>(tokens.size()));
+    if (llama_decode(g_ctx, batch) != 0) {
         llama_memory_clear(memory, true);
-        common_prefix = 0;
+        return env->NewStringUTF("DECODE_ERROR: model gagal memproses prompt.");
     }
-    const size_t suffix_size = tokens.size() - common_prefix;
-    if (suffix_size > 0) {
-        llama_batch batch = llama_batch_get_one(tokens.data() + common_prefix, static_cast<int32_t>(suffix_size));
-        if (llama_decode(g_ctx, batch) != 0) {
-            llama_memory_clear(memory, true);
-            g_cached_prompt_tokens.clear();
-            return env->NewStringUTF("DECODE_ERROR: model gagal memproses prompt.");
-        }
-    }
-    g_cached_prompt_tokens = tokens;
     const auto prefill_done = std::chrono::steady_clock::now();
     __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
-        "timing tokenize_ms=%lld prefill_ms=%lld prompt_tokens=%d reused_prefix=%zu",
+        "timing tokenize_ms=%lld prefill_ms=%lld prompt_tokens=%d decode_tokens=%zu cache=off",
         static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(tokenized_at - generation_start).count()),
         static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(prefill_done - tokenized_at).count()),
-        n_prompt, common_prefix);
+        n_prompt, tokens.size());
 
     llama_sampler * sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
-    if (!sampler) { llama_memory_clear(llama_get_memory(g_ctx), true); g_cached_prompt_tokens.clear(); return env->NewStringUTF("SAMPLER_ERROR: sampler tidak dapat dibuat."); }
+    if (!sampler) { llama_memory_clear(llama_get_memory(g_ctx), true); return env->NewStringUTF("SAMPLER_ERROR: sampler tidak dapat dibuat."); }
     llama_sampler_chain_add(sampler, llama_sampler_init_penalties(llama_vocab_n_tokens(vocab), 64,
         std::max(1.0f, std::min(2.0f, static_cast<float>(repeatPenalty))), 0.0f, 0.0f));
     llama_sampler_chain_add(sampler, llama_sampler_init_top_k(40));
@@ -225,8 +214,8 @@ Java_com_sandev_chat_NativeLlama_generate(JNIEnv * env, jclass, jstring jprompt,
     llama_sampler_chain_add(sampler, llama_sampler_init_dist(static_cast<uint32_t>(std::time(nullptr))));
 
     std::string output;
-    // Luna's known-good build used 80 tokens; preserve lower user-selected limits.
-    const int limit = std::max(1, std::min({80, static_cast<int>(maxTokens), g_ctx_size - n_prompt}));
+    // Match Luna's known-good 48-token response budget for the latency baseline.
+    const int limit = std::max(1, std::min({48, static_cast<int>(maxTokens), g_ctx_size - static_cast<int>(tokens.size())}));
     for (int i = 0; i < limit; ++i) {
         const llama_token token = llama_sampler_sample(sampler, g_ctx, -1);
         if (llama_vocab_is_eog(vocab, token)) break;
