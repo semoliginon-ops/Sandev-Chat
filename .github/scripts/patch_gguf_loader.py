@@ -39,8 +39,8 @@ replacement = r'''    private void loadSelectedModel(Uri uri, int contextLength)
                 }
                 if (staged.exists() && !staged.delete()) throw new IOException("Tidak bisa mengganti model lama. Periksa ruang penyimpanan.");
                 if (!temp.renameTo(staged)) throw new IOException("Gagal menyiapkan file model di penyimpanan aplikasi. Pastikan ruang kosong cukup.");
-                int safeContext = 768; // Match the stable Luna reference context.
-                int safeThreads = 2; // Match Luna; avoid oversubscribing mobile CPU cores.
+                int safeContext = Math.max(256, Math.min(2048, contextLength));
+                int safeThreads = Math.max(2, Math.min(4, Runtime.getRuntime().availableProcessors() - 1));
                 boolean ok = NativeLlama.loadModel(staged.getAbsolutePath(), safeContext, safeThreads);
                 if (!ok) throw new IOException("llama.cpp gagal memuat GGUF ini. Pastikan arsitektur model didukung, ruang RAM cukup, dan coba context 512–1024.");
                 String name = queryDisplayName(uri);
