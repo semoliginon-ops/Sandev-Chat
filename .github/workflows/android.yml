@@ -6,6 +6,7 @@ on:
     paths:
       - 'sandev-chat-alpha-0.2.zip'
       - '.github/workflows/android.yml'
+      - '.github/scripts/patch_gguf_loader.py'
 permissions:
   contents: read
 jobs:
@@ -19,6 +20,7 @@ jobs:
           unzip -q sandev-chat-alpha-0.2.zip -d source
           test -f source/sandev-chat/app/build.gradle
           sed -i '/^    targetSdk 35$/d' source/sandev-chat/app/build.gradle
+          python3 .github/scripts/patch_gguf_loader.py source/sandev-chat/app/src/main/java/com/sandev/chat/MainActivity.java
           echo "Build configuration:"
           cat source/sandev-chat/app/build.gradle
       - uses: actions/setup-java@v4
