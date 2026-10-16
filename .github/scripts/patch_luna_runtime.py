@@ -12,6 +12,8 @@ if old_tag in cmake:
     cmake = cmake.replace(old_tag, new_tag, 1)
 elif new_tag not in cmake:
     raise SystemExit("Could not find expected llama.cpp tag in CMakeLists.txt")
+# A raw commit SHA requires a non-shallow FetchContent checkout.
+cmake = cmake.replace("GIT_SHALLOW TRUE", "GIT_SHALLOW FALSE", 1)
 extra_options = """set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_APP OFF CACHE BOOL "" FORCE)
 set(LLAMA_OPENSSL OFF CACHE BOOL "" FORCE)
