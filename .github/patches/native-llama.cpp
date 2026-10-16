@@ -5,6 +5,7 @@
 #include <mutex>
 #include <algorithm>
 #include <ctime>
+#include <chrono>
 #include <utility>
 #include "llama.h"
 
@@ -15,8 +16,11 @@ static std::mutex g_mutex;
 static llama_model * g_model = nullptr;
 static llama_context * g_ctx = nullptr;
 static int g_ctx_size = 768;
+// Exact shared prompt prefix from the previous turn; reset whenever the model changes.
+static std::vector<llama_token> g_cached_prompt_tokens;
 
 static void unload_locked() {
+    g_cached_prompt_tokens.clear();
     if (g_ctx) { llama_free(g_ctx); g_ctx = nullptr; }
     if (g_model) { llama_model_free(g_model); g_model = nullptr; }
 }
@@ -158,6 +162,7 @@ Java_com_sandev_chat_NativeLlama_generate(JNIEnv * env, jclass, jstring jprompt,
     std::lock_guard<std::mutex> lock(g_mutex);
     if (!g_model || !g_ctx) return env->NewStringUTF("Model belum dimuat.");
 
+    const auto generation_start = std::chrono::steady_clock::now();
     const llama_vocab * vocab = llama_model_get_vocab(g_model);
     const std::string prompt = format_prompt_for_model(input);
     std::vector<llama_token> tokens(prompt.size() + 16);
@@ -170,6 +175,7 @@ Java_com_sandev_chat_NativeLlama_generate(JNIEnv * env, jclass, jstring jprompt,
     }
     if (n_prompt <= 0) return env->NewStringUTF("Prompt kosong atau tidak dapat di-tokenisasi.");
     tokens.resize(static_cast<size_t>(n_prompt));
+    const auto tokenized_at = std::chrono::steady_clock::now();
 
     // Bound prompt work and generation so a phone with 6 GB RAM responds predictably.
     const size_t max_prompt_tokens = std::min<size_t>(480, g_ctx_size > 80 ? g_ctx_size - 80 : g_ctx_size - 1);
@@ -177,15 +183,40 @@ Java_com_sandev_chat_NativeLlama_generate(JNIEnv * env, jclass, jstring jprompt,
         return env->NewStringUTF("PROMPT_TOO_LONG: riwayat chat terlalu panjang; mulai percakapan baru atau kurangi context.");
     }
 
-    llama_memory_clear(llama_get_memory(g_ctx), true);
-    llama_batch batch = llama_batch_get_one(tokens.data(), n_prompt);
-    if (llama_decode(g_ctx, batch) != 0) {
-        llama_memory_clear(llama_get_memory(g_ctx), true);
-        return env->NewStringUTF("DECODE_ERROR: model gagal memproses prompt.");
+    // Reuse only an exact token prefix. Remove the previous assistant answer and
+    // changed suffix from the KV cache, then decode only the prompt tokens we need.
+    llama_memory_t memory = llama_get_memory(g_ctx);
+    size_t common_prefix = 0;
+    while (common_prefix < tokens.size() &&
+           common_prefix < g_cached_prompt_tokens.size() &&
+           tokens[common_prefix] == g_cached_prompt_tokens[common_prefix]) {
+        ++common_prefix;
     }
+    // Re-decode the final prompt token so sampler logits reflect this full prompt.
+    if (common_prefix >= tokens.size() && common_prefix > 0) --common_prefix;
+    if (common_prefix == 0 || !llama_memory_seq_rm(memory, 0, static_cast<llama_pos>(common_prefix), -1)) {
+        llama_memory_clear(memory, true);
+        common_prefix = 0;
+    }
+    const size_t suffix_size = tokens.size() - common_prefix;
+    if (suffix_size > 0) {
+        llama_batch batch = llama_batch_get_one(tokens.data() + common_prefix, static_cast<int32_t>(suffix_size));
+        if (llama_decode(g_ctx, batch) != 0) {
+            llama_memory_clear(memory, true);
+            g_cached_prompt_tokens.clear();
+            return env->NewStringUTF("DECODE_ERROR: model gagal memproses prompt.");
+        }
+    }
+    g_cached_prompt_tokens = tokens;
+    const auto prefill_done = std::chrono::steady_clock::now();
+    __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
+        "timing tokenize_ms=%lld prefill_ms=%lld prompt_tokens=%d reused_prefix=%zu",
+        static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(tokenized_at - generation_start).count()),
+        static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(prefill_done - tokenized_at).count()),
+        n_prompt, common_prefix);
 
     llama_sampler * sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
-    if (!sampler) return env->NewStringUTF("SAMPLER_ERROR: sampler tidak dapat dibuat.");
+    if (!sampler) { llama_memory_clear(llama_get_memory(g_ctx), true); g_cached_prompt_tokens.clear(); return env->NewStringUTF("SAMPLER_ERROR: sampler tidak dapat dibuat."); }
     llama_sampler_chain_add(sampler, llama_sampler_init_penalties(llama_vocab_n_tokens(vocab), 64,
         std::max(1.0f, std::min(2.0f, static_cast<float>(repeatPenalty))), 0.0f, 0.0f));
     llama_sampler_chain_add(sampler, llama_sampler_init_top_k(40));
@@ -207,6 +238,11 @@ Java_com_sandev_chat_NativeLlama_generate(JNIEnv * env, jclass, jstring jprompt,
         if (llama_decode(g_ctx, next) != 0) break;
     }
     llama_sampler_free(sampler);
+    const auto generation_done = std::chrono::steady_clock::now();
+    __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
+        "timing generation_ms=%lld output_bytes=%zu",
+        static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(generation_done - prefill_done).count()),
+        output.size());
     if (output.empty()) output = "Model tidak menghasilkan teks. Coba prompt singkat atau model lain.";
     return env->NewStringUTF(output.c_str());
 }
