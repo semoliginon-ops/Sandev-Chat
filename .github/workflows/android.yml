@@ -7,6 +7,8 @@ on:
       - 'sandev-chat-alpha-0.2.zip'
       - '.github/workflows/android.yml'
       - '.github/scripts/patch_gguf_loader.py'
+      - '.github/scripts/patch_luna_runtime.py'
+      - '.github/patches/native-llama.cpp'
 permissions:
   contents: read
 jobs:
@@ -21,6 +23,7 @@ jobs:
           test -f source/sandev-chat/app/build.gradle
           sed -i '/^    targetSdk 35$/d' source/sandev-chat/app/build.gradle
           python3 .github/scripts/patch_gguf_loader.py source/sandev-chat/app/src/main/java/com/sandev/chat/MainActivity.java
+          python3 .github/scripts/patch_luna_runtime.py source/sandev-chat
           echo "Build configuration:"
           cat source/sandev-chat/app/build.gradle
       - uses: actions/setup-java@v4
