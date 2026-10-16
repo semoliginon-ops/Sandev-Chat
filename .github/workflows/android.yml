@@ -18,6 +18,10 @@ jobs:
           test -f sandev-chat-alpha-0.2.zip
           unzip -q sandev-chat-alpha-0.2.zip -d source
           test -f source/sandev-chat/app/build.gradle
+          # Fix misplaced targetSdk in the original alpha build script.
+          sed -i '/^    targetSdk 35$/d' source/sandev-chat/app/build.gradle
+          echo "Build configuration:"
+          cat source/sandev-chat/app/build.gradle
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
