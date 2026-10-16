@@ -18,58 +18,9 @@ jobs:
           test -f sandev-chat-alpha-0.2.zip
           unzip -q sandev-chat-alpha-0.2.zip -d source
           test -f source/sandev-chat/app/build.gradle
-          # Fix misplaced targetSdk in the original alpha build script.
           sed -i '/^    targetSdk 35$/d' source/sandev-chat/app/build.gradle
           echo "Build configuration:"
           cat source/sandev-chat/app/build.gradle
-          # Make SAF-selected GGUF files load even when Android's provider exposes
-          # a non-seekable descriptor: try the descriptor first, then cache-copy as fallback.
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("source/sandev-chat/app/src/main/java/com/sandev/chat/MainActivity.java")
-          s = p.read_text()
-          s = s.replace("import java.io.FileNotFoundException;\nimport java.io.IOException;", "import java.io.FileNotFoundException;\nimport java.io.IOException;\nimport java.io.File;\nimport java.io.FileOutputStream;\nimport java.io.InputStream;")
-          start = s.index("    private void loadSelectedModel(Uri uri, int contextLength) {")
-          end = s.index("\n    private String queryDisplayName(Uri uri) {", start)
-          replacement = r'''    private void loadSelectedModel(Uri uri, int contextLength) {
-          runOnUiThread(() -> webView.evaluateJavascript("window.onModelLoading && window.onModelLoading()", null));
-          new Thread(() -> {
-              int ctx = Math.max(256, Math.min(2048, contextLength));
-              int threads = Math.max(2, Math.min(4, Runtime.getRuntime().availableProcessors() - 1));
-              try (ParcelFileDescriptor pfd = getContentResolver().openFileDescriptor(uri, "r")) {
-                  if (pfd == null) throw new IOException("Android tidak bisa membuka file model.");
-                  String path = "/proc/self/fd/" + pfd.getFd();
-                  boolean ok = NativeLlama.loadModel(path, ctx, threads);
-                  if (!ok) {
-                      // Some document providers expose virtual/non-seekable files.
-                      // Copy only as fallback; retain the cached file while llama.cpp uses mmap.
-                      runOnUiThread(() -> webView.evaluateJavascript(
-                          "window.onModelLoading && window.onModelLoading('Menyiapkan file model…')", null));
-                      File cached = new File(getCacheDir(), "sandev-active-model.gguf");
-                      try (InputStream in = getContentResolver().openInputStream(uri);
-                           FileOutputStream out = new FileOutputStream(cached, false)) {
-                          if (in == null) throw new IOException("Tidak bisa membaca isi file GGUF dari penyimpanan Android.");
-                          byte[] buffer = new byte[1024 * 1024];
-                          int count;
-                          while ((count = in.read(buffer)) != -1) out.write(buffer, 0, count);
-                          out.getFD().sync();
-                      }
-                      ok = NativeLlama.loadModel(cached.getAbsolutePath(), ctx, threads);
-                  }
-                  if (!ok) throw new IOException("Model GGUF ditolak oleh runtime. Pastikan file lengkap dan merupakan model teks yang didukung; model vision/multimodal tertentu belum didukung di build ini.");
-                  String name = queryDisplayName(uri);
-                  runOnUiThread(() -> webView.evaluateJavascript("window.onModelLoaded(" + org.json.JSONObject.quote(name) + ")", null));
-              } catch (Throwable e) {
-                  String msg = e.getMessage() == null ? "Gagal memuat GGUF. Periksa ruang penyimpanan dan kompatibilitas model." : e.getMessage();
-                  runOnUiThread(() -> webView.evaluateJavascript("window.onModelLoadError(" + org.json.JSONObject.quote(msg) + ")", null));
-              }
-          }, "sandev-model-loader").start();
-      }
-'''
-          s = s[:start] + replacement + s[end:]
-          s = s.replace('window.onModelLoading=function(){$("modelStatus").textContent="Memuat model…";', 'window.onModelLoading=function(message){$("modelStatus").textContent=message||"Memuat model…";')
-          p.write_text(s)
-          PY
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
