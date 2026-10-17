@@ -10,3 +10,12 @@ diff --git a/examples/llama.android/lib/src/main/cpp/ai_chat.cpp b/examples/llam
 -constexpr int   BATCH_SIZE              = 512;
 +constexpr int   BATCH_SIZE              = 128;
  constexpr float DEFAULT_SAMPLER_TEMP    = 0.3f;
+diff --git a/examples/llama.android/lib/build.gradle.kts b/examples/llama.android/lib/build.gradle.kts
+--- a/examples/llama.android/lib/build.gradle.kts
++++ b/examples/llama.android/lib/build.gradle.kts
+@@ -18,7 +18,7 @@
+         ndk {
+-             abiFilters += listOf("arm64-v8a", "x86_64")
++             abiFilters += listOf("arm64-v8a")
+         }
+         externalNativeBuild {
