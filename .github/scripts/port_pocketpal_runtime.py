@@ -33,6 +33,14 @@ shutil.copytree(assets, dest, dirs_exist_ok=True)
 # Adapt the old synchronous callsite for the asynchronous React Native WebView bridge.
 entry = dest / html.name
 source = entry.read_text(encoding="utf-8")
+# Replace the legacy Llama-specific prompt wrapper with structured role markers. llama.rn
+# then applies the selected GGUF model's embedded chat template, as PocketPal does.
+old_prompt = r'''let prompt='<|im_start|>system\\n'+st+'\\nBalas dalam bahasa Indonesia yang natural. Jika diminta ngobrol, jawaban boleh panjang dan ekspresif. Jangan menulis label USER atau ASSISTANT di jawaban. <|im_end|>\\n';history.forEach(m=>{prompt+='<|im_start|>'+(m.role==='user'?'user':'assistant')+'\\n'+m.text+'<|im_end|>\\n'});prompt+='<|im_start|>assistant\\n';let max= settings.mode==='auto' ? (settings.lengthStyle==='long'?384:192) : settings.tokens;Sandev.generate(prompt,max,settings.temp,settings.topP,settings.repeat)'''
+new_prompt = r'''let prompt='[[SANDEV_SYSTEM]]\\n'+st+'\\nBalas dalam bahasa Indonesia yang natural. Jika diminta ngobrol, jawaban boleh panjang dan ekspresif. Jangan menulis label USER atau ASSISTANT di jawaban.';history.forEach(m=>{prompt+=(m.role==='user'?'\\n[[SANDEV_HISTORY_USER]]\\n':'\\n[[SANDEV_HISTORY_ASSISTANT]]\\n')+m.text});let max= settings.mode==='auto' ? (settings.lengthStyle==='long'?384:192) : Math.min(512,settings.tokens);Sandev.generate(prompt,max,settings.temp,settings.topP,settings.repeat)'''
+if old_prompt in source:
+    source = source.replace(old_prompt, new_prompt, 1)
+elif "[[SANDEV_SYSTEM]]" not in source:
+    raise SystemExit("Could not locate the original prompt builder in Sandev UI")
 old = "Sandev.generate("
 if old not in source:
     old = "Android.generate("
