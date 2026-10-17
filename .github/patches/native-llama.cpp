@@ -52,18 +52,18 @@ Java_com_sandev_chat_NativeLlama_loadModel(JNIEnv * env, jclass, jstring jpath, 
         return JNI_FALSE;
     }
 
-    // Keep generation threads conservative, but allow prompt prefill to use
-    // a few more CPU workers on multi-core phones.
+    // Restore conservative, known-good CPU scheduling after the multi-core
+    // prefill experiment regressed latency on the target phone.
     const long online_cores = sysconf(_SC_NPROCESSORS_ONLN);
     const int available_cores = online_cores > 0 ? static_cast<int>(online_cores) : 4;
-    const int generation_threads = std::max(2, std::min(4, threads > 0 ? static_cast<int>(threads) : available_cores));
-    const int batch_threads = std::max(generation_threads, std::min(6, available_cores));
-    g_ctx_size = contextLength > 0 ? std::max(512, std::min(1024, static_cast<int>(contextLength))) : 768;
+    (void) contextLength;
+    (void) threads;
+    g_ctx_size = 768;
     llama_context_params context_params = llama_context_default_params();
-    context_params.n_ctx = g_ctx_size;
+    context_params.n_ctx = 768;
     context_params.n_batch = 512;
-    context_params.n_threads = generation_threads;
-    context_params.n_threads_batch = batch_threads;
+    context_params.n_threads = 4;
+    context_params.n_threads_batch = 4;
     g_ctx = llama_init_from_model(g_model, context_params);
     if (!g_ctx) {
         LOGE("llama_init_from_model failed");
