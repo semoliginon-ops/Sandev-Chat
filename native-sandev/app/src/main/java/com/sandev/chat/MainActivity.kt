@@ -346,7 +346,7 @@ class MainActivity : AppCompatActivity() {
             val item = navRow.getChildAt(index) as? LinearLayout ?: continue
             val label = (item.getChildAt(1) as? TextView)?.text?.toString().orEmpty()
             val selected = when (label) {
-                "Discover" -> currentPage == "discover"
+                "Discover" -> currentPage == "discover" || currentPage == "blackjack"
                 "Chats" -> currentPage == "chats" || currentPage == "conversation"
                 "Create Bot" -> currentPage == "create_bot"
                 "Music" -> currentPage == "music"
@@ -355,7 +355,7 @@ class MainActivity : AppCompatActivity() {
             }
             (item.getChildAt(0) as? TextView)?.setTextColor(if (selected) p.accent else p.muted)
             (item.getChildAt(1) as? TextView)?.setTextColor(if (selected) p.accent else p.text)
-            item.setBackgroundColor(if (selected) p.panel else Color.TRANSPARENT)
+            item.background = if (selected) panelBackground(p.panel, p.accent, 12) else android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
         }
     }
 
