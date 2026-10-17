@@ -15,14 +15,20 @@ else
   git -C "$DEST" checkout --detach "$PIN"
 fi
 
+# Keep the dependency checkout reproducible; the local low-memory patch is reapplied below.
+git -C "$DEST" reset --hard "$PIN"
+
 ENGINE_CPP="$DEST/examples/llama.android/lib/src/main/cpp/ai_chat.cpp"
+LIB_GRADLE="$DEST/examples/llama.android/lib/build.gradle.kts"
 if grep -q 'DEFAULT_CONTEXT_SIZE    8192' "$ENGINE_CPP"; then
   (cd "$DEST" && git apply "$ROOT/patches/lightweight-engine.patch")
 fi
 
-if ! grep -q 'DEFAULT_CONTEXT_SIZE    2048' "$ENGINE_CPP"; then
+if ! grep -q 'DEFAULT_CONTEXT_SIZE    2048' "$ENGINE_CPP" ||
+   ! grep -q 'BATCH_SIZE              = 128' "$ENGINE_CPP" ||
+   ! grep -q 'abiFilters += listOf("arm64-v8a")' "$LIB_GRADLE"; then
   echo "Could not verify lightweight engine patch; refusing to continue." >&2
   exit 1
 fi
 
-printf 'Prepared llama.cpp at %s with 2048 context / 128 batch\n' "$PIN"
+printf 'Prepared llama.cpp at %s (arm64 only, 2048 context / 128 batch)\n' "$PIN"
