@@ -32,6 +32,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -82,8 +83,12 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 engine = AiChat.getInferenceEngine(applicationContext)
-                val initialState = engine.state.first {
-                    it is InferenceEngine.State.Initialized || it is InferenceEngine.State.ModelReady || it is InferenceEngine.State.Error
+                val initialState = withTimeout(45_000) {
+                    engine.state.first {
+                        it is InferenceEngine.State.Initialized ||
+                            it is InferenceEngine.State.ModelReady ||
+                            it is InferenceEngine.State.Error
+                    }
                 }
                 if (initialState is InferenceEngine.State.Error) {
                     throw initialState.exception
