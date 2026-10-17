@@ -41,7 +41,38 @@ host_source = host_app.read_text(encoding="utf-8")
 bridge_match = re.search(r"const BRIDGE = `([\s\S]*?)`;", host_source)
 if not bridge_match:
     raise SystemExit("Could not extract the native bridge bootstrap from App.tsx")
-bridge_script = "<script>\n" + bridge_match.group(1) + "\n</script>\n"
+bridge_code = bridge_match.group(1)
+# Report runtime failures and taps to the native host so the next device test is diagnosable.
+diagnostics = r"""
+  window.addEventListener('error', function(e) {
+    try { window.ReactNativeWebView.postMessage(JSON.stringify({
+      __sandevDiag: 'error',
+      message: String(e.message || 'JavaScript error'),
+      source: String(e.filename || ''),
+      line: Number(e.lineno || 0)
+    })); } catch (_) {}
+  });
+  window.addEventListener('unhandledrejection', function(e) {
+    try { window.ReactNativeWebView.postMessage(JSON.stringify({
+      __sandevDiag: 'rejection',
+      message: String(e.reason && (e.reason.stack || e.reason.message) || e.reason || 'Unhandled promise rejection')
+    })); } catch (_) {}
+  });
+  document.addEventListener('click', function(e) {
+    try {
+      var n = e.target && (e.target.closest ? e.target.closest('button,[role=button],a,input[type=button],input[type=submit]') : e.target);
+      if (!n) return;
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        __sandevDiag: 'tap',
+        target: String(n.tagName || 'node').toLowerCase(),
+        id: String(n.id || ''),
+        label: String(n.innerText || n.value || n.getAttribute('aria-label') || '').trim().slice(0, 60)
+      }));
+    } catch (_) {}
+  }, true);
+"""
+bridge_code = bridge_code.replace("  window.__sandevModelLoaded=false;", "  window.__sandevModelLoaded=false;\n" + diagnostics)
+bridge_script = "<script>\n" + bridge_code + "\n</script>\n"
 head_match = re.search(r"<head\b[^>]*>", source, flags=re.IGNORECASE)
 if head_match:
     source = source[:head_match.end()] + "\n" + bridge_script + source[head_match.end():]
