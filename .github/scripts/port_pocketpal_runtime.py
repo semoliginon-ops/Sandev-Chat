@@ -44,7 +44,7 @@ if not bridge_match:
 bridge_script = "<script>\n" + bridge_match.group(1) + "\n</script>\n"
 head_match = re.search(r"<head\b[^>]*>", source, flags=re.IGNORECASE)
 if head_match:
-    source = source[:head_match.end()] + "\\n" + bridge_script + source[head_match.end():]
+    source = source[:head_match.end()] + "\n" + bridge_script + source[head_match.end():]
 else:
     source = bridge_script + source
 print("Installed the native bridge before legacy UI scripts.")
