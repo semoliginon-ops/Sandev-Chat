@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate a React Native host using PocketPal's llama.rn engine and Sandev's UI assets."""
 from pathlib import Path
-import json, shutil, subprocess, zipfile
+import json, re, shutil, subprocess, zipfile
 
 root = Path.cwd()
 work = root / ".migration-work"
