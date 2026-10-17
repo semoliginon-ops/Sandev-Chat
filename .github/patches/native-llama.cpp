@@ -16,7 +16,7 @@ static std::mutex g_mutex;
 static llama_model * g_model = nullptr;
 static llama_context * g_ctx = nullptr;
 static int g_ctx_size = 768;
-// Exact shared prompt prefix from the last request, matching stable Luna build #76.
+// Exact shared prompt prefix from the last request.
 static std::vector<llama_token> g_cached_prompt_tokens;
 
 static void unload_locked() {
@@ -41,6 +41,7 @@ Java_com_sandev_chat_NativeLlama_loadModel(JNIEnv * env, jclass, jstring jpath, 
     const std::string path = from_jstring(env, jpath);
     if (path.empty()) return JNI_FALSE;
 
+    const auto model_load_start = std::chrono::steady_clock::now();
     llama_backend_init();
     llama_model_params model_params = llama_model_default_params();
     model_params.n_gpu_layers = 0;
@@ -66,6 +67,9 @@ Java_com_sandev_chat_NativeLlama_loadModel(JNIEnv * env, jclass, jstring jpath, 
         unload_locked();
         return JNI_FALSE;
     }
+    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "timing model_load_ms=%lld context=%d threads=%d",
+        static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - model_load_start).count()),
+        g_ctx_size, context_params.n_threads);
     return JNI_TRUE;
 }
 
@@ -180,7 +184,7 @@ Java_com_sandev_chat_NativeLlama_generate(JNIEnv * env, jclass, jstring jprompt,
     tokens.resize(static_cast<size_t>(n_prompt));
     const auto tokenized_at = std::chrono::steady_clock::now();
 
-    // Match stable Luna build #76: preserve the complete model-formatted prompt.
+    // Preserve the complete model-formatted prompt.
     // Never splice token fragments; fail clearly if the prompt exceeds the safe batch.
     const size_t max_prompt_tokens = 480;
     if (tokens.size() > max_prompt_tokens) {
@@ -229,10 +233,12 @@ Java_com_sandev_chat_NativeLlama_generate(JNIEnv * env, jclass, jstring jprompt,
     llama_sampler_chain_add(sampler, llama_sampler_init_dist(static_cast<uint32_t>(std::time(nullptr))));
 
     std::string output;
-    // Match stable Luna build #76: up to 80 generated tokens.
+    // Enforce the response token limit selected by the app, capped for mobile use.
     const int limit = std::max(1, std::min({80, static_cast<int>(maxTokens), g_ctx_size - n_prompt}));
+    int generated_tokens = 0;
     for (int i = 0; i < limit; ++i) {
         const llama_token token = llama_sampler_sample(sampler, g_ctx, -1);
+        ++generated_tokens;
         if (llama_vocab_is_eog(vocab, token)) break;
         char piece[4096];
         const int piece_size = llama_token_to_piece(vocab, token, piece, sizeof(piece), 0, true);
@@ -244,9 +250,9 @@ Java_com_sandev_chat_NativeLlama_generate(JNIEnv * env, jclass, jstring jprompt,
     llama_sampler_free(sampler);
     const auto generation_done = std::chrono::steady_clock::now();
     __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
-        "timing generation_ms=%lld output_bytes=%zu",
+        "timing generation_ms=%lld generated_tokens=%d output_bytes=%zu",
         static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(generation_done - prefill_done).count()),
-        output.size());
+        generated_tokens, output.size());
     if (output.empty()) output = "Model tidak menghasilkan teks. Coba prompt singkat atau model lain.";
     return env->NewStringUTF(output.c_str());
 }
