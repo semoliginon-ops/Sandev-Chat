@@ -190,7 +190,7 @@ class MainActivity : AppCompatActivity() {
         input = EditText(this).apply {
             hint = "Tulis pesan..."
             textSize = 15f
-            singleLine = false
+            isSingleLine = false
             minLines = 1
             maxLines = 4
             imeOptions = EditorInfo.IME_ACTION_SEND
