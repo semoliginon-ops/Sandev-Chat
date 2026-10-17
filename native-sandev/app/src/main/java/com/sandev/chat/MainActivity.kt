@@ -748,20 +748,15 @@ class MainActivity : AppCompatActivity() {
             toast("Pilih file model berformat .gguf.")
             return
         }
-        status.text = "Memeriksa metadata Q4_K_M..."
+        status.text = "Memeriksa file dan metadata GGUF..."
         sendButton.isEnabled = false
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val metadata = contentResolver.openInputStream(uri)?.use { GgufMetadataReader.create().readStructuredMetadata(it) }
-                    ?: error("File model tidak bisa dibaca.")
-                if (metadata.architecture?.fileType != 15) {
-                    withContext(Dispatchers.Main) {
-                        status.text = "Model ditolak: bukan Q4_K_M."
-                        toast("Pilih GGUF dengan quantization Q4_K_M.")
-                        sendButton.isEnabled = true
-                    }
-                    return@launch
-                }
+                // Accept any GGUF quantization. Actual architecture/operator support is
+                // determined by the bundled llama.cpp engine when loadModel() runs.
+                contentResolver.openInputStream(uri)?.use {
+                    GgufMetadataReader.create().readStructuredMetadata(it)
+                } ?: error("File model tidak bisa dibaca atau bukan GGUF yang valid.")
                 withContext(Dispatchers.Main) { status.text = "Menyalin model ke penyimpanan aplikasi..." }
                 val dir = modelsDir().apply { mkdirs() }
                 val safeName = safeFileName(originalName)
@@ -837,7 +832,8 @@ class MainActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     activeModelName = null
                     prefs().edit().remove(KEY_ACTIVE_MODEL).apply()
-                    val reason = e.message ?: "periksa format/model"
+                    val reason = e.message?.takeIf { it.isNotBlank() }
+                        ?: "Error ${e.javaClass.simpleName.ifBlank { "tidak diketahui" }}"
                     status.text = "Model gagal dimuat: $reason"
                     input.isEnabled = true
                     sendButton.isEnabled = true
