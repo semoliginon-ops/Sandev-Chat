@@ -83,7 +83,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 engine = AiChat.getInferenceEngine(applicationContext)
                 val initialState = engine.state.first {
-                    it is InferenceEngine.State.Initialized || it is InferenceEngine.State.Error
+                    it is InferenceEngine.State.Initialized || it is InferenceEngine.State.ModelReady || it is InferenceEngine.State.Error
                 }
                 if (initialState is InferenceEngine.State.Error) {
                     throw initialState.exception
@@ -238,8 +238,6 @@ class MainActivity : AppCompatActivity() {
                         .setNegativeButton("Batal", null)
                         .setPositiveButton("Hapus") { _, _ -> deleteModel(file) }.show()
                 } else {
-                    activeModelName = file.name
-                    prefs().edit().putString(KEY_ACTIVE_MODEL, file.name).apply()
                     loadModelFile(file, true)
                 }
             }.show()
@@ -278,8 +276,6 @@ class MainActivity : AppCompatActivity() {
                     FileOutputStream(target).use { sink -> source.copyTo(sink) }
                 }
                 withContext(Dispatchers.Main) {
-                    activeModelName = target.name
-                    prefs().edit().putString(KEY_ACTIVE_MODEL, target.name).apply()
                     status.text = "Model tersimpan. Memuat model..."
                     loadModelFile(target, true)
                 }
