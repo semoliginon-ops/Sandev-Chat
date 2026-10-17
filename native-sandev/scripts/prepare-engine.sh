@@ -15,4 +15,14 @@ else
   git -C "$DEST" checkout --detach "$PIN"
 fi
 
-printf 'Prepared llama.cpp at %s\n' "$PIN"
+ENGINE_CPP="$DEST/examples/llama.android/lib/src/main/cpp/ai_chat.cpp"
+if grep -q 'DEFAULT_CONTEXT_SIZE    8192' "$ENGINE_CPP"; then
+  (cd "$DEST" && git apply "$ROOT/patches/lightweight-engine.patch")
+fi
+
+if ! grep -q 'DEFAULT_CONTEXT_SIZE    2048' "$ENGINE_CPP"; then
+  echo "Could not verify lightweight engine patch; refusing to continue." >&2
+  exit 1
+fi
+
+printf 'Prepared llama.cpp at %s with 2048 context / 128 batch\n' "$PIN"
