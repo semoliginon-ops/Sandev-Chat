@@ -239,13 +239,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun addAction(row: LinearLayout, label: String, action: () -> Unit) {
-        row.addView(Button(this).apply {
+        val button = Button(this).apply {
             text = label
-            textSize = 11f
+            textSize = 12f
             minWidth = 0
             setPadding(dp(5), 0, dp(5), 0)
             setOnClickListener { action() }
-        }, LinearLayout.LayoutParams(0, dp(44), 1f))
+        }
+        val params = if (row.orientation == LinearLayout.VERTICAL) {
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44))
+        } else {
+            LinearLayout.LayoutParams(0, dp(44), 1f)
+        }
+        row.addView(button, params)
     }
 
     private fun addNavItem(row: LinearLayout, symbol: String, label: String, action: () -> Unit) {
