@@ -60,13 +60,12 @@ diagnostics = r"""
   });
   document.addEventListener('click', function(e) {
     try {
-      var n = e.target && (e.target.closest ? e.target.closest('button,[role=button],a,input[type=button],input[type=submit]') : e.target);
-      if (!n) return;
+      var n = e.target && (e.target.closest ? (e.target.closest('button,[role=button],a,input[type=button],input[type=submit]') || e.target) : e.target);
       window.ReactNativeWebView.postMessage(JSON.stringify({
         __sandevDiag: 'tap',
         target: String(n.tagName || 'node').toLowerCase(),
         id: String(n.id || ''),
-        label: String(n.innerText || n.value || n.getAttribute('aria-label') || '').trim().slice(0, 60)
+        label: String(n.innerText || n.value || n.getAttribute('aria-label') || n.className || '').trim().slice(0, 60)
       }));
     } catch (_) {}
   }, true);
