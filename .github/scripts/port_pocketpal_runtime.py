@@ -109,14 +109,14 @@ pos = source.index("await " + old)
 # start, so searching for the nearest arrow incorrectly marks that callback
 # async and leaves sendMessage() non-async (which makes the entire script fail
 # to parse and all inline onclick handlers disappear).
-send_fn = re.search(r"function\\s+sendMessage\\s*\\(", source)
+send_fn = re.search(r"function\s+sendMessage\s*\(", source)
 if send_fn and send_fn.start() < pos:
     # Confirm no later function declaration starts between sendMessage and the
     # generate call; if there is one, refuse to guess which function to modify.
-    later_fn = re.search(r"function\\s+[A-Za-z_$][\\w$]*\\s*\\(", source[send_fn.end():pos])
+    later_fn = re.search(r"function\s+[A-Za-z_$][\w$]*\s*\(", source[send_fn.end():pos])
     if later_fn:
         raise SystemExit("Unexpected nested function before generate() inside sendMessage; refusing unsafe async patch")
-    if not re.search(r"async\\s+function\\s+sendMessage\\s*\\(", source):
+    if not re.search(r"async\s+function\s+sendMessage\s*\(", source):
         source = source[:send_fn.start()] + "async " + source[send_fn.start():]
 else:
     raise SystemExit("Could not identify sendMessage() as the generate() caller; refusing to ship")
