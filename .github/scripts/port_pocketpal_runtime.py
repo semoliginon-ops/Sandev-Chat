@@ -33,6 +33,13 @@ shutil.copytree(assets, dest, dirs_exist_ok=True)
 # Adapt the old synchronous callsite for the asynchronous React Native WebView bridge.
 entry = dest / html.name
 source = entry.read_text(encoding="utf-8")
+# Emit focused source diagnostics for the missing sendMessage global reported on-device.
+for token in ("sendMessage", "function send", "function generate", "onclick="):
+    hits = [m.start() for m in re.finditer(re.escape(token), source, flags=re.IGNORECASE)]
+    print("SOURCE_DIAG", token, "count=", len(hits))
+    for at in hits[:8]:
+        print("SOURCE_DIAG_SNIP", repr(source[max(0, at-180):min(len(source), at+320)]))
+
 # Install the bridge bootstrap inside the HTML itself, before legacy scripts run.
 # Android's injectedJavaScriptBeforeContentLoaded can race page startup on some
 # WebView versions; if the old UI starts first, its controls can fail globally.
