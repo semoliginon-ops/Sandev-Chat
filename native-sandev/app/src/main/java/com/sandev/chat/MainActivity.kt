@@ -52,6 +52,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var chatColumn: LinearLayout
     private lateinit var input: EditText
     private lateinit var sendButton: Button
+    private lateinit var backButton: Button
     private lateinit var composer: LinearLayout
     private lateinit var navRow: LinearLayout
     private lateinit var profileImage: ImageView
@@ -175,6 +176,21 @@ class MainActivity : AppCompatActivity() {
         titleColumn.addView(header)
         titleColumn.addView(status)
         top.addView(titleColumn)
+        backButton = Button(this).apply {
+            text = "← Menu"
+            textSize = 11f
+            minWidth = 0
+            setPadding(dp(6), 0, dp(6), 0)
+            visibility = View.GONE
+            setOnClickListener {
+                input.clearFocus()
+                val keyboard = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+                keyboard.hideSoftInputFromWindow(input.windowToken, 0)
+                currentPage = "discover"
+                renderPage()
+            }
+        }
+        top.addView(backButton)
         root.addView(top)
 
         val actions = LinearLayout(this).apply {
@@ -339,6 +355,7 @@ class MainActivity : AppCompatActivity() {
     private fun renderPage() {
         if (!::chatColumn.isInitialized) return
         val inConversation = currentPage == "conversation"
+        backButton.visibility = if (inConversation) View.VISIBLE else View.GONE
         // Insets on the root reserve the real IME height, keeping the composer above the keyboard.
         composer.visibility = if (inConversation) View.VISIBLE else View.GONE
         navRow.visibility = if (inConversation) View.GONE else View.VISIBLE
@@ -465,21 +482,7 @@ class MainActivity : AppCompatActivity() {
                     background = panelBackground(p.panel, Color.rgb(53, 66, 88), 18)
                     isClickable = true
                     isFocusable = true
-                    setOnClickListener {
-                        saveMessages()
-                        activeBotId = bot.id
-                        prefs().edit().putString(KEY_ACTIVE_BOT, activeBotId).apply()
-                        loadMessagesForBot(activeBotId)
-                        currentPage = "conversation"
-                        if (bot.greeting.isNotBlank() && messages.isEmpty()) {
-                            messages.add(ChatMessage("assistant", bot.greeting))
-                            saveMessages()
-                        }
-                        if (engineReady && activeModelName != null) lifecycleScope.launch {
-                            try { engine.setSystemPrompt(buildCharacterSystemPrompt(bot)) } catch (_: Exception) {}
-                        }
-                        renderPage()
-                    }
+                    setOnClickListener { openBotConversation(bot, addGreeting = true) }
                 }
                 val avatar = ImageView(this).apply {
                     layoutParams = LinearLayout.LayoutParams(dp(76), dp(84))
@@ -851,15 +854,33 @@ class MainActivity : AppCompatActivity() {
         if (list.isEmpty()) { createBot(); return }
         AlertDialog.Builder(this).setTitle("Pilih bot")
             .setItems(list.map { it.name }.toTypedArray()) { _, index ->
-                activeBotId = list[index].id
-                prefs().edit().putString(KEY_ACTIVE_BOT, activeBotId).apply()
-                header.text = list[index].name
-                applyImages()
-                if (engineReady && activeModelName != null) {
-                    val file = modelFile(activeModelName!!)
-                    if (file.exists()) loadModelFile(file, false)
-                }
+                openBotConversation(list[index])
             }.show()
+    }
+
+    private fun openBotConversation(bot: BotProfile, addGreeting: Boolean = false) {
+        if (generationJob?.isActive == true || modelLoadInProgress || modelImportInProgress) {
+            toast("Tunggu proses model atau jawaban selesai dulu.")
+            return
+        }
+        val switchingCharacter = activeBotId != bot.id
+        saveMessages()
+        activeBotId = bot.id
+        prefs().edit().putString(KEY_ACTIVE_BOT, activeBotId).apply()
+        loadMessagesForBot(activeBotId)
+        if (addGreeting && bot.greeting.isNotBlank() && messages.isEmpty()) {
+            messages.add(ChatMessage("assistant", bot.greeting))
+            saveMessages()
+        }
+        currentPage = "conversation"
+        renderPage()
+
+        // The inference engine accepts a system prompt only immediately after loadModel().
+        // Reload on character switches so the selected bot's prompt is installed at the valid point.
+        if (switchingCharacter && engineReady && activeModelName != null) {
+            val file = modelFile(activeModelName!!)
+            if (file.exists()) loadModelFile(file, false)
+        }
     }
 
     private fun createBot() {
@@ -928,21 +949,9 @@ class MainActivity : AppCompatActivity() {
             }.trim()
             val bot = BotProfile(UUID.randomUUID().toString(), botName, fullPrompt, null,
                 tagline.text.toString().trim(), botDescription, botGreeting, exampleText)
-            saveMessages()
             bots.add(bot)
             saveBots()
-            activeBotId = bot.id
-            prefs().edit().putString(KEY_ACTIVE_BOT, activeBotId).apply()
-            loadMessagesForBot(activeBotId)
-            if (botGreeting.isNotBlank()) {
-                messages.add(ChatMessage("assistant", botGreeting))
-                saveMessages()
-            }
-            currentPage = "conversation"
-            if (engineReady && activeModelName != null) lifecycleScope.launch {
-                try { engine.setSystemPrompt(buildCharacterSystemPrompt(bot)) } catch (_: Exception) {}
-            }
-            renderPage()
+            openBotConversation(bot, addGreeting = true)
             toast("Karakter $botName tersimpan. Ketuk avatar di header untuk mengganti fotonya.")
         }
         addAction(chatColumn, "Batal") { currentPage = "discover"; renderPage() }
@@ -1140,9 +1149,8 @@ class MainActivity : AppCompatActivity() {
         status.text = "Bot sedang mengetik..."
         generationJob = lifecycleScope.launch(Dispatchers.IO) {
             try {
-                // Re-apply the selected character's identity immediately before every generation.
-                // This prevents a stale prompt from the previously selected bot leaking into the chat.
-                engine.setSystemPrompt(buildCharacterSystemPrompt(activeBot()))
+                // The selected bot's system prompt is installed immediately after loadModel().
+                // Do not call setSystemPrompt here: this engine rejects late prompt changes.
                 engine.sendUserPrompt(text, predictLength = 256).collect { token ->
                     assistant.text += token
                     withContext(Dispatchers.Main) {
@@ -1208,15 +1216,7 @@ class MainActivity : AppCompatActivity() {
                     isClickable = true
                     isFocusable = true
                     setOnClickListener {
-                        saveMessages()
-                        activeBotId = bot.id
-                        prefs().edit().putString(KEY_ACTIVE_BOT, activeBotId).apply()
-                        loadMessagesForBot(activeBotId)
-                        if (engineReady && activeModelName != null) lifecycleScope.launch {
-                            try { engine.setSystemPrompt(buildCharacterSystemPrompt(bot)) } catch (_: Exception) {}
-                        }
-                        currentPage = "conversation"
-                        renderPage()
+                        openBotConversation(bot)
                     }
                 }
                 val avatar = ImageView(this).apply {
