@@ -74,6 +74,7 @@ class MainActivity : AppCompatActivity() {
     private var backgroundPath: String? = null
     private var currentAssistantView: TextView? = null
     private var currentPage = "discover"
+    private var editingBotId: String? = null
     private var conversationReturnPage = "discover"
     private var userName = "You"
     private var userHandle = ""
@@ -534,15 +535,27 @@ class MainActivity : AppCompatActivity() {
                 })
                 card.addView(textCol)
                 if (bot.id != "default") {
-                    val deleteBotButton = Button(this).apply {
+                    val manageBotButton = Button(this).apply {
                         text = "⋮"
                         textSize = 18f
                         minWidth = 0
                         setPadding(dp(6), 0, dp(6), 0)
-                        contentDescription = "Hapus bot ${bot.name}"
-                        setOnClickListener { showDeleteBotConfirmation(bot) }
+                        contentDescription = "Kelola bot " + bot.name
+                        setOnClickListener {
+                            AlertDialog.Builder(this@MainActivity)
+                                .setTitle(bot.name)
+                                .setItems(arrayOf("Edit bot", "Hapus bot")) { _, action ->
+                                    if (action == 0) {
+                                        editingBotId = bot.id
+                                        currentPage = "create_bot"
+                                        renderPage()
+                                    } else {
+                                        showDeleteBotConfirmation(bot)
+                                    }
+                                }.show()
+                        }
                     }
-                    card.addView(deleteBotButton, LinearLayout.LayoutParams(dp(42), dp(48)))
+                    card.addView(manageBotButton, LinearLayout.LayoutParams(dp(42), dp(48)))
                 }
                 cards.addView(card, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(10) })
             }
@@ -921,8 +934,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderCreateBotPage() {
-        header.text = "Create Bot"
-        addSectionTitle("Ciptakan karakter", "Isi detail karakter seperti membuat persona di Character.AI.")
+        val editingBot = editingBotId?.let { id -> bots.firstOrNull { it.id == id } }
+        header.text = if (editingBot == null) "Create Bot" else "Edit Bot"
+        addSectionTitle(
+            if (editingBot == null) "Ciptakan karakter" else "Edit " + editingBot.name,
+            if (editingBot == null) "Rancang karakter sesuai imajinasimu." else "Ubah detail karakter tanpa menghapus riwayat percakapannya."
+        )
         val p = palettes[themeIndex]
         val formCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -940,12 +957,14 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(12), dp(10), dp(12), dp(10))
             background = panelBackground(p.background, p.muted, 12)
         }
-        val name = field("Nama karakter *")
-        val tagline = field("Tagline singkat")
-        val description = field("Deskripsi karakter", 3)
-        val greeting = field("Greeting / sapaan awal", 3)
-        val prompt = field("Kepribadian, gaya bicara, dan latar belakang", 5)
-        val example = field("Contoh dialog (opsional)", 3)
+        val name = field("Nama karakter *").apply { setText(editingBot?.name.orEmpty()) }
+        val tagline = field("Tagline singkat").apply { setText(editingBot?.tagline.orEmpty()) }
+        val description = field("Deskripsi karakter", 3).apply { setText(editingBot?.description.orEmpty()) }
+        val greeting = field("Greeting / sapaan awal", 3).apply { setText(editingBot?.greeting.orEmpty()) }
+        val prompt = field("Kepribadian, gaya bicara, dan latar belakang", 5).apply {
+            setText(editingBot?.systemPrompt.orEmpty())
+        }
+        val example = field("Contoh dialog (opsional)", 3).apply { setText(editingBot?.exampleDialog.orEmpty()) }
         fun addLabeled(label: String, edit: EditText) {
             formCard.addView(TextView(this).apply {
                 text = label
@@ -975,18 +994,50 @@ class MainActivity : AppCompatActivity() {
             val exampleText = example.text.toString().trim()
             val fullPrompt = buildString {
                 append(prompt.text.toString().trim())
-                if (botDescription.isNotBlank()) append("\n\nDeskripsi karakter: ").append(botDescription)
-                if (exampleText.isNotBlank()) append("\n\nContoh dialog:\n").append(exampleText)
                 if (userPersona.isNotBlank()) append("\n\nPersona pengguna: ").append(userPersona)
             }.trim()
-            val bot = BotProfile(UUID.randomUUID().toString(), botName, fullPrompt, null,
-                tagline.text.toString().trim(), botDescription, botGreeting, exampleText)
-            bots.add(bot)
+            val updatedBot = if (editingBot != null) {
+                val replacement = editingBot.copy(
+                    name = botName,
+                    systemPrompt = fullPrompt,
+                    tagline = tagline.text.toString().trim(),
+                    description = botDescription,
+                    greeting = botGreeting,
+                    exampleDialog = exampleText
+                )
+                val index = bots.indexOfFirst { it.id == editingBot.id }
+                if (index >= 0) bots[index] = replacement
+                editingBotId = null
+                replacement
+            } else {
+                BotProfile(
+                    UUID.randomUUID().toString(), botName, fullPrompt, null,
+                    tagline.text.toString().trim(), botDescription, botGreeting, exampleText
+                ).also { bots.add(it) }
+            }
             saveBots()
-            openBotConversation(bot, addGreeting = true)
-            toast("Karakter $botName tersimpan. Ketuk avatar di header untuk mengganti fotonya.")
+            if (editingBot != null) {
+                if (activeBotId == updatedBot.id) {
+                    openBotConversation(updatedBot)
+                    activeModelName?.let { modelName ->
+                        val model = modelFile(modelName)
+                        if (model.exists()) loadModelFile(model, false)
+                    }
+                } else {
+                    currentPage = "discover"
+                    renderPage()
+                }
+                toast("Perubahan " + updatedBot.name + " tersimpan.")
+            } else {
+                openBotConversation(updatedBot, addGreeting = true)
+                toast("Karakter " + botName + " tersimpan. Ketuk avatar di header untuk mengganti fotonya.")
+            }
         }
-        addAction(chatColumn, "Batal") { currentPage = "discover"; renderPage() }
+        addAction(chatColumn, "Batal") {
+            editingBotId = null
+            currentPage = "discover"
+            renderPage()
+        }
     }
 
     private fun cycleTheme() {
