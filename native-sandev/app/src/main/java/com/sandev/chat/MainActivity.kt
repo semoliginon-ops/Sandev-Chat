@@ -29,6 +29,7 @@ import com.arm.aichat.InferenceEngine
 import com.arm.aichat.gguf.GgufMetadataReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -81,8 +82,14 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 engine = AiChat.getInferenceEngine(applicationContext)
+                val initialState = engine.state.first {
+                    it is InferenceEngine.State.Initialized || it is InferenceEngine.State.Error
+                }
+                if (initialState is InferenceEngine.State.Error) {
+                    throw initialState.exception
+                }
                 withContext(Dispatchers.Main) {
-                    status.text = "Siap. Pilih model GGUF untuk mulai."
+                    status.text = "Siap. Pilih model Q4_K_M GGUF."
                     engineReady = true
                     activeModelName?.let { name ->
                         val model = modelFile(name)
@@ -296,11 +303,17 @@ class MainActivity : AppCompatActivity() {
         status.text = "Memuat ${file.name}..."
         lifecycleScope.launch(Dispatchers.IO) {
             try {
+                when (engine.state.value) {
+                    is InferenceEngine.State.ModelReady,
+                    is InferenceEngine.State.Error -> engine.cleanUp()
+                    is InferenceEngine.State.Initialized -> Unit
+                    else -> error("Engine masih sibuk. Tunggu proses model selesai.")
+                }
                 engine.loadModel(file.absolutePath)
-                val bot = activeBot()
-                engine.setSystemPrompt(bot.systemPrompt)
+                engine.setSystemPrompt(activeBot().systemPrompt.ifBlank { DEFAULT_SYSTEM_PROMPT })
                 withContext(Dispatchers.Main) {
                     activeModelName = file.name
+                    prefs().edit().putString(KEY_ACTIVE_MODEL, file.name).apply()
                     status.text = "Model aktif: ${file.name}"
                     input.isEnabled = true
                     sendButton.isEnabled = true
@@ -353,9 +366,8 @@ class MainActivity : AppCompatActivity() {
                 header.text = list[index].name
                 applyImages()
                 if (engineReady && activeModelName != null) {
-                    lifecycleScope.launch(Dispatchers.IO) {
-                        try { engine.setSystemPrompt(list[index].systemPrompt) } catch (_: Exception) {}
-                    }
+                    val file = modelFile(activeModelName!!)
+                    if (file.exists()) loadModelFile(file, false)
                 }
             }.show()
     }
@@ -385,9 +397,8 @@ class MainActivity : AppCompatActivity() {
                 header.text = bot.name
                 applyImages()
                 if (engineReady && activeModelName != null) {
-                    lifecycleScope.launch(Dispatchers.IO) {
-                        try { engine.setSystemPrompt(bot.systemPrompt) } catch (_: Exception) {}
-                    }
+                    val file = modelFile(activeModelName!!)
+                    if (file.exists()) loadModelFile(file, false)
                 }
             }.show()
     }
@@ -547,13 +558,14 @@ class MainActivity : AppCompatActivity() {
         status.text = "Bot sedang mengetik..."
         generationJob = lifecycleScope.launch(Dispatchers.IO) {
             try {
-                engine.sendUserPrompt(text).collect { token ->
+                engine.sendUserPrompt(text, predictLength = 256).collect { token ->
                     assistant.text += token
                     withContext(Dispatchers.Main) {
                         currentAssistantView?.text = "Bot: ${assistant.text}"
                         chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
                     }
                 }
+                if (assistant.text.isBlank()) error("Model tidak menghasilkan token jawaban.")
                 saveMessages()
                 withContext(Dispatchers.Main) {
                     status.text = "Model aktif: ${activeModelName}"
@@ -653,7 +665,13 @@ class MainActivity : AppCompatActivity() {
         generationJob?.cancel()
         stopMusic()
         if (::engine.isInitialized) {
-            try { engine.destroy() } catch (_: Exception) {}
+            try {
+                when (engine.state.value) {
+                    is InferenceEngine.State.ModelReady,
+                    is InferenceEngine.State.Error -> engine.cleanUp()
+                    else -> Unit
+                }
+            } catch (_: Exception) {}
         }
         super.onDestroy()
     }
@@ -673,6 +691,8 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_BACKGROUND = "background"
         private const val KEY_MESSAGES = "messages"
         private const val KEY_BOTS = "bots"
+        private const val DEFAULT_SYSTEM_PROMPT =
+            "You are Sandev, a helpful AI assistant. Answer clearly in the user's language."
         private val palettes = listOf(
             Palette(Color.rgb(16,19,25), Color.rgb(29,34,44), Color.rgb(245,246,250), Color.rgb(166,174,190), Color.rgb(139,124,255), Color.rgb(48,54,72), Color.rgb(36,43,56)),
             Palette(Color.rgb(248,249,252), Color.rgb(255,255,255), Color.rgb(29,33,42), Color.rgb(105,112,124), Color.rgb(48,110,230), Color.rgb(220,234,255), Color.rgb(236,239,245)),
