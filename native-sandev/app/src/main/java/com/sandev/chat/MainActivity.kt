@@ -23,6 +23,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -52,7 +53,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var chatColumn: LinearLayout
     private lateinit var input: EditText
     private lateinit var sendButton: Button
-    private lateinit var backButton: Button
+    private lateinit var chatMenuButton: Button
     private lateinit var composer: LinearLayout
     private lateinit var navRow: LinearLayout
     private lateinit var profileImage: ImageView
@@ -73,6 +74,7 @@ class MainActivity : AppCompatActivity() {
     private var backgroundPath: String? = null
     private var currentAssistantView: TextView? = null
     private var currentPage = "discover"
+    private var conversationReturnPage = "discover"
     private var userName = "You"
     private var userHandle = ""
     private var userBio = ""
@@ -101,6 +103,22 @@ class MainActivity : AppCompatActivity() {
         loadLocalState()
         buildUi()
         renderPage()
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                when (currentPage) {
+                    "conversation" -> {
+                        input.clearFocus()
+                        currentPage = conversationReturnPage
+                        renderPage()
+                    }
+                    "discover" -> finish()
+                    else -> {
+                        currentPage = "discover"
+                        renderPage()
+                    }
+                }
+            }
+        })
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 engine = AiChat.getInferenceEngine(applicationContext)
@@ -176,21 +194,16 @@ class MainActivity : AppCompatActivity() {
         titleColumn.addView(header)
         titleColumn.addView(status)
         top.addView(titleColumn)
-        backButton = Button(this).apply {
-            text = "← Menu"
-            textSize = 11f
+        chatMenuButton = Button(this).apply {
+            text = "⋮"
+            textSize = 20f
             minWidth = 0
-            setPadding(dp(6), 0, dp(6), 0)
+            setPadding(dp(8), 0, dp(8), 0)
+            contentDescription = "Aksi percakapan"
             visibility = View.GONE
-            setOnClickListener {
-                input.clearFocus()
-                val keyboard = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-                keyboard.hideSoftInputFromWindow(input.windowToken, 0)
-                currentPage = "discover"
-                renderPage()
-            }
+            setOnClickListener { showChatActions() }
         }
-        top.addView(backButton)
+        top.addView(chatMenuButton)
         root.addView(top)
 
         val actions = LinearLayout(this).apply {
@@ -355,7 +368,7 @@ class MainActivity : AppCompatActivity() {
     private fun renderPage() {
         if (!::chatColumn.isInitialized) return
         val inConversation = currentPage == "conversation"
-        backButton.visibility = if (inConversation) View.VISIBLE else View.GONE
+        chatMenuButton.visibility = if (inConversation) View.VISIBLE else View.GONE
         // Insets on the root reserve the real IME height, keeping the composer above the keyboard.
         composer.visibility = if (inConversation) View.VISIBLE else View.GONE
         navRow.visibility = if (inConversation) View.GONE else View.VISIBLE
@@ -768,7 +781,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun loadModelFile(file: File, showToast: Boolean) {
+    private fun loadModelFile(
+        file: File,
+        showToast: Boolean,
+        historyOverride: List<ChatMessage>? = null,
+        onReady: (() -> Unit)? = null,
+        onFailure: ((String) -> Unit)? = null
+    ) {
         if (!engineReady) {
             pendingModelFile = file
             status.text = "Model tersimpan; menunggu engine..."
@@ -793,7 +812,7 @@ class MainActivity : AppCompatActivity() {
                     else -> error("Engine masih sibuk. Tunggu proses model selesai.")
                 }
                 engine.loadModel(file.absolutePath)
-                engine.setSystemPrompt(buildCharacterSystemPrompt(activeBot()))
+                engine.setSystemPrompt(buildCharacterSystemPrompt(activeBot(), historyOverride ?: messages.toList()))
                 withContext(Dispatchers.Main) {
                     activeModelName = file.name
                     prefs().edit().putString(KEY_ACTIVE_MODEL, file.name).apply()
@@ -801,14 +820,17 @@ class MainActivity : AppCompatActivity() {
                     input.isEnabled = true
                     sendButton.isEnabled = true
                     if (showToast) toast("Model siap digunakan.")
+                    onReady?.invoke()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     activeModelName = null
                     prefs().edit().remove(KEY_ACTIVE_MODEL).apply()
-                    status.text = "Model gagal dimuat: ${e.message ?: "periksa format/model"}"
+                    val reason = e.message ?: "periksa format/model"
+                    status.text = "Model gagal dimuat: $reason"
                     input.isEnabled = true
                     sendButton.isEnabled = true
+                    onFailure?.invoke(reason)
                 }
             } finally {
                 withContext(Dispatchers.Main) {
@@ -864,6 +886,9 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val switchingCharacter = activeBotId != bot.id
+        if (currentPage != "conversation") {
+            conversationReturnPage = if (currentPage == "chats") "chats" else "discover"
+        }
         saveMessages()
         activeBotId = bot.id
         prefs().edit().putString(KEY_ACTIVE_BOT, activeBotId).apply()
@@ -1143,6 +1168,11 @@ class MainActivity : AppCompatActivity() {
         messages.add(assistant)
         saveMessages()
         renderMessages()
+        startAssistantGeneration(text, assistant)
+    }
+
+    private fun startAssistantGeneration(prompt: String, assistant: ChatMessage) {
+        val predictLength = automaticPredictLength(prompt)
         currentAssistantView = (chatColumn.getChildAt(chatColumn.childCount - 1) as? LinearLayout)?.getChildAt(0) as? TextView
         input.isEnabled = false
         sendButton.isEnabled = false
@@ -1151,7 +1181,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 // The selected bot's system prompt is installed immediately after loadModel().
                 // Do not call setSystemPrompt here: this engine rejects late prompt changes.
-                engine.sendUserPrompt(text, predictLength = 256).collect { token ->
+                engine.sendUserPrompt(prompt, predictLength = predictLength).collect { token ->
                     assistant.text += token
                     withContext(Dispatchers.Main) {
                         currentAssistantView?.text = assistant.text
@@ -1177,6 +1207,154 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun automaticPredictLength(prompt: String): Int {
+        val text = prompt.lowercase()
+        val shortRequest = listOf("singkat", "ringkas", "pendek saja", "jawab pendek", "satu kalimat", "ya atau tidak", "jawaban singkat")
+            .any { text.contains(it) }
+        if (shortRequest) return 96
+
+        val longRequest = listOf(
+            "jelaskan detail", "secara rinci", "lebih lengkap", "panjang", "ceritakan", "lanjutkan cerita",
+            "lanjutkan", "narasikan", "adegan", "roleplay", "in detail", "long answer", "continue the story",
+            "describe", "story", "scene"
+        ).any { text.contains(it) }
+        val characterRoleplay = activeBot().id != "default" &&
+            (prompt.length > 45 || listOf("aku ", "saya ", "dia ", "lalu ", "kemudian ").any { text.contains(it) })
+        if (longRequest || prompt.length > 180 || characterRoleplay) return 320
+        if (prompt.trim().split(Regex("\\s+")).size <= 7) return 128
+        return 192
+    }
+
+    private fun showChatActions() {
+        if (generationJob?.isActive == true || modelLoadInProgress || modelImportInProgress) {
+            toast("Tunggu proses model atau jawaban selesai dulu.")
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(activeBot().name)
+            .setItems(arrayOf("Clean Chat", "Delete Chat", "Regenerate jawaban terakhir")) { _, which ->
+                when (which) {
+                    0 -> cleanCurrentChat()
+                    1 -> deleteCurrentChat()
+                    2 -> regenerateLastResponse()
+                }
+            }
+            .show()
+    }
+
+    private fun cleanCurrentChat() {
+        if (generationJob?.isActive == true || modelLoadInProgress || modelImportInProgress) {
+            toast("Tunggu proses yang sedang berjalan selesai.")
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Clean Chat?")
+            .setMessage("Percakapan ${activeBot().name} akan dikosongkan. Riwayat bot lain tetap aman.")
+            .setNegativeButton("Batal", null)
+            .setPositiveButton("Bersihkan") { _, _ ->
+                messages.clear()
+                saveMessages()
+                renderMessages()
+                toast("Chat ${activeBot().name} dibersihkan.")
+                activeModelName?.let { name ->
+                    val file = modelFile(name)
+                    if (file.exists()) loadModelFile(file, false)
+                }
+            }
+            .show()
+    }
+
+    private fun deleteCurrentChat() {
+        if (generationJob?.isActive == true || modelLoadInProgress || modelImportInProgress) {
+            toast("Tunggu proses yang sedang berjalan selesai.")
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Hapus chat?")
+            .setMessage("Riwayat ${activeBot().name} akan dihapus dari tab Chats. Karakternya tetap ada di Discover.")
+            .setNegativeButton("Batal", null)
+            .setPositiveButton("Hapus") { _, _ ->
+                val botId = activeBotId
+                messages.clear()
+                prefs().edit()
+                    .remove(KEY_MESSAGES_PREFIX + botId)
+                    .putString(KEY_MESSAGES, "[]")
+                    .apply()
+                currentPage = conversationReturnPage
+                renderPage()
+                toast("Riwayat chat dihapus.")
+                activeModelName?.let { name ->
+                    val file = modelFile(name)
+                    if (file.exists()) loadModelFile(file, false)
+                }
+            }
+            .show()
+    }
+
+    private fun deleteBotChat(bot: BotProfile) {
+        AlertDialog.Builder(this)
+            .setTitle("Hapus chat ${bot.name}?")
+            .setMessage("Riwayat percakapan ini akan dihapus. Karakter tetap tersedia di Discover.")
+            .setNegativeButton("Batal", null)
+            .setPositiveButton("Hapus") { _, _ ->
+                prefs().edit().remove(KEY_MESSAGES_PREFIX + bot.id).apply()
+                if (bot.id == activeBotId) {
+                    messages.clear()
+                    prefs().edit().putString(KEY_MESSAGES, "[]").apply()
+                    activeModelName?.let { name ->
+                        val file = modelFile(name)
+                        if (file.exists()) loadModelFile(file, false)
+                    }
+                }
+                toast("Riwayat ${bot.name} dihapus.")
+                renderPage()
+            }
+            .show()
+    }
+
+    private fun regenerateLastResponse() {
+        if (generationJob?.isActive == true || modelLoadInProgress || modelImportInProgress) {
+            toast("Tunggu proses yang sedang berjalan selesai.")
+            return
+        }
+        if (messages.isEmpty() || messages.last().role != "assistant") {
+            toast("Belum ada jawaban terakhir yang bisa dibuat ulang.")
+            return
+        }
+        val assistantIndex = messages.lastIndex
+        val userIndex = (assistantIndex - 1 downTo 0).firstOrNull { messages[it].role == "user" }
+        if (userIndex == null) {
+            toast("Pesan pengguna sebelumnya tidak ditemukan.")
+            return
+        }
+        val model = activeModelName?.let { modelFile(it) }
+        if (model == null || !model.exists()) {
+            toast("Pilih ulang model sebelum regenerasi.")
+            return
+        }
+        val prompt = messages[userIndex].text
+        messages.removeAt(assistantIndex)
+        val replacement = ChatMessage("assistant", "")
+        messages.add(replacement)
+        saveMessages()
+        renderMessages()
+        val priorHistory = messages.take(userIndex).toList()
+        loadModelFile(
+            model,
+            false,
+            priorHistory,
+            onReady = { startAssistantGeneration(prompt, replacement) },
+            onFailure = { reason ->
+                replacement.text = "Gagal menyiapkan regenerasi: $reason"
+                saveMessages()
+                renderMessages()
+                input.isEnabled = true
+                sendButton.isEnabled = true
+                toast("Regenerasi gagal disiapkan.")
+            }
+        )
     }
 
     private fun renderChatHistory() {
@@ -1245,6 +1423,14 @@ class MainActivity : AppCompatActivity() {
                     typeface = Typeface.DEFAULT_BOLD; setTextColor(p.accent)
                 })
                 card.addView(details)
+                val deleteButton = Button(this).apply {
+                    text = "Hapus"
+                    textSize = 10f
+                    minWidth = 0
+                    setPadding(dp(4), 0, dp(4), 0)
+                    setOnClickListener { deleteBotChat(bot) }
+                }
+                card.addView(deleteButton)
                 chatColumn.addView(card, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(10) })
             }
         }
@@ -1346,6 +1532,7 @@ class MainActivity : AppCompatActivity() {
             }
         } catch (_: Exception) {}
         if (bots.none { it.id == "default" }) bots.add(0, BotProfile("default", "Sandev", ""))
+        ensureSampleBots()
         val perBotKey = KEY_MESSAGES_PREFIX + activeBotId
         if (prefs().contains(perBotKey)) {
             loadMessagesForBot(activeBotId)
@@ -1383,6 +1570,55 @@ class MainActivity : AppCompatActivity() {
         messages.addAll(readMessagesForBot(botId))
     }
 
+    private fun ensureSampleBots() {
+        val samples = listOf(
+            BotProfile(
+                id = "sample_aira",
+                name = "Aira",
+                systemPrompt = "Kamu Aira, penjaga toko buku yang hangat, peka, sedikit pemalu, dan punya humor lembut. Bangun romansa slow-burn yang saling menghormati. Jangan memaksa hubungan; biarkan kedekatan tumbuh dari percakapan dan tindakan kecil.",
+                tagline = "Romansa slow-burn di toko buku kecil",
+                description = "Romansa modern tentang dua orang yang sering bertemu di toko buku saat hujan. Hangat, manis, perlahan, dan penuh momen kecil.",
+                greeting = "*Aira menutup novel yang sedang dibacanya lalu tersenyum kecil.* "Kamu datang lagi. Lagi cari buku baru, atau sebenarnya mau mengobrol denganku?"",
+                exampleDialog = "Pengguna: Hari ini melelahkan.\nAira: *Ia menggeser secangkir teh hangat ke arahmu.* "Kalau begitu, duduk dulu. Kamu nggak harus menceritakan semuanya sekarang.""
+            ),
+            BotProfile(
+                id = "sample_mika",
+                name = "Mika",
+                systemPrompt = "Kamu Mika, barista ceria di kafe 24 jam yang suka bercanda, jago mendengarkan, dan spontan mengajak pengguna masuk ke roleplay slice-of-life. Beri respons natural, dialog yang hidup, dan detail suasana secukupnya.",
+                tagline = "Roleplay kafe tengah malam",
+                description = "Roleplay slice-of-life di kafe kota yang selalu buka. Obrolan santai, pertemanan, rahasia pelanggan, dan kejadian spontan.",
+                greeting = "*Lonceng pintu kafe berbunyi. Mika melambaikan tangan dari balik mesin kopi.* "Selamat datang! Duduk di tempat biasa? Aku baru bikin menu eksperimen—dan aku butuh kelinci percobaan."",
+                exampleDialog = "Pengguna: Menu eksperimen?\nMika: "Namanya Kopi Galau Level Tiga. Rasanya enak, tapi efek sampingnya bikin kamu jujur soal perasaan." *Ia menahan tawa.*"
+            ),
+            BotProfile(
+                id = "sample_elowen",
+                name = "Elowen",
+                systemPrompt = "Kamu Elowen, elf penjaga hutan kuno dalam dunia fantasi. Bijaksana, tenang, penuh rasa ingin tahu, dan sedikit sarkastik. Gunakan narasi atmosferis serta dialog karakter, tetapi tetap beri ruang bagi pengguna untuk menentukan tindakannya sendiri.",
+                tagline = "Fantasi elf dan hutan terlarang",
+                description = "Fantasi epik dengan elf, sihir kuno, reruntuhan, roh hutan, dan perjalanan misterius.",
+                greeting = "*Cahaya hijau berpendar di antara pepohonan. Seorang elf menurunkan busurnya, tetapi belum melepaskan kewaspadaan.* "Jarang manusia menemukan jalan ini. Katakan, pengelana—apa yang membawamu ke Hutan Elarion?"",
+                exampleDialog = "Pengguna: Aku mencari artefak kuno.\nElowen: *Telinganya bergerak saat angin berbisik.* "Semua orang mencari artefak. Yang jarang mereka tanyakan adalah apa yang sedang menunggu untuk ditemukan oleh artefak itu.""
+            ),
+            BotProfile(
+                id = "sample_kael",
+                name = "Kael",
+                systemPrompt = "Kamu Kael, pangeran naga yang dapat berubah menjadi manusia. Bangga, protektif, cerdas, dan menyembunyikan kesepian di balik sikap dingin. Bangun roleplay fantasi dengan konflik, pilihan bermakna, dan narasi yang sinematik tanpa mengambil alih tindakan pengguna.",
+                tagline = "Pangeran naga dengan rahasia kuno",
+                description = "Fantasi kerajaan naga, perjanjian sihir, intrik istana, dan petualangan antara manusia dengan naga.",
+                greeting = "*Asap tipis keluar dari sela-sela bibirnya. Kael menatapmu dari singgasana obsidian.* "Kau berani memasuki wilayahku tanpa undangan. Aku seharusnya mengusirmu... jadi, beri aku satu alasan untuk tidak melakukannya."",
+                exampleDialog = "Pengguna: Aku tidak takut padamu.\nKael: *Senyumnya tipis, kilatan keemasan melintas di matanya.* "Bagus. Rasa takut membuat percakapan membosankan. Keberanian, sebaliknya, bisa menjadi sangat merepotkan.""
+            )
+        )
+        var changed = false
+        samples.forEach { sample ->
+            if (bots.none { it.id == sample.id }) {
+                bots.add(sample)
+                changed = true
+            }
+        }
+        if (changed) saveBots()
+    }
+
     private fun saveBots() {
         val array = JSONArray()
         bots.forEach { array.put(JSONObject()
@@ -1395,7 +1631,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun activeBot(): BotProfile = bots.firstOrNull { it.id == activeBotId } ?: bots.first()
 
-    private fun buildCharacterSystemPrompt(bot: BotProfile): String = buildString {
+    private fun buildCharacterSystemPrompt(
+        bot: BotProfile,
+        history: List<ChatMessage> = messages
+    ): String = buildString {
         appendLine("IDENTITAS KARAKTER — INI WAJIB KONSISTEN")
         appendLine("Nama karakter kamu adalah: ${bot.name}.")
         if (bot.tagline.isNotBlank()) appendLine("Ciri singkat karakter: ${bot.tagline}.")
@@ -1421,6 +1660,17 @@ class MainActivity : AppCompatActivity() {
         appendLine("- Jangan mengulang sapaan pertama di setiap balasan. Tanggapi isi pesan terbaru secara alami.")
         appendLine("- Jaga kesinambungan fakta dan hubungan dalam riwayat chat karakter ini. Jangan mengarang bahwa kamu mengetahui hal yang belum pernah diceritakan.")
         appendLine("- Gunakan bahasa yang dipakai pengguna, kecuali pembuat karakter menentukan bahasa lain.")
+        appendLine("- Atur panjang jawaban otomatis: singkat untuk pertanyaan sederhana, sedang untuk obrolan biasa, dan lebih panjang saat diminta detail atau saat adegan roleplay memang membutuhkan narasi.")
+        appendLine("- Jangan memanjangkan jawaban tanpa alasan; utamakan respons alami dan sesuai konteks.")
+        val recentHistory = history.filter { it.text.isNotBlank() }.takeLast(6)
+        if (recentHistory.isNotEmpty()) {
+            appendLine()
+            appendLine("KONTEKS PERCAKAPAN SEBELUMNYA — gunakan untuk kesinambungan, jangan mengulangnya:")
+            recentHistory.forEach { message ->
+                val speaker = if (message.role == "user") "Pengguna" else bot.name
+                appendLine("$speaker: ${message.text.take(180)}")
+            }
+        }
     }.trim()
 
     private fun modelsDir() = File(filesDir, "models")
