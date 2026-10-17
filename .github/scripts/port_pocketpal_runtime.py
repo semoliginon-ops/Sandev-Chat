@@ -82,7 +82,7 @@ package["name"] = "sandev-chat"
 package["dependencies"].update({
     "@pocketpalai/llama.rn": "0.8.1-0",
     "@react-native-async-storage/async-storage": "2.2.0",
-    "react-native-document-picker": "9.3.1",
+    "@react-native-documents/picker": "12.0.2",
     "react-native-fs": "2.20.0",
     "react-native-webview": "13.16.0"
 })
