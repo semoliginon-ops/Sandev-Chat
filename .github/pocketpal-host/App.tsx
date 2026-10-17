@@ -1,7 +1,7 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {ActivityIndicator, Alert, BackHandler, SafeAreaView, StatusBar, Text, View} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import DocumentPicker from 'react-native-document-picker';
+import {pick, types} from '@react-native-documents/picker';
 import RNFS from 'react-native-fs';
 import {WebView, WebViewMessageEvent} from 'react-native-webview';
 import {initLlama, LlamaContext} from '@pocketpalai/llama.rn';
@@ -61,7 +61,7 @@ export default function App(): React.JSX.Element {
 
   const chooseModel = useCallback(async () => {
     try {
-      const picked = await DocumentPicker.pickSingle({type: [DocumentPicker.types.allFiles], copyTo: 'documentDirectory'});
+      const pickedFiles = await pick({type: [types.allFiles], mode: 'import'});\n      const picked = pickedFiles[0];\n      if (!picked) return;
       const uri = picked.fileCopyUri || picked.uri;
       const path = decodeURIComponent(uri.replace(/^file:\/\//, ''));
       if (!path.toLowerCase().endsWith('.gguf')) {
@@ -84,7 +84,7 @@ export default function App(): React.JSX.Element {
       setStatus('Model siap');
       inject('window.__sandevSetModelLoaded(true);if(window.onModelLoaded)window.onModelLoaded(' + JSON.stringify(picked.name || 'Model GGUF') + ')');
     } catch (e: any) {
-      if (!DocumentPicker.isCancel(e)) {
+      if (true) {
         const message = e?.message || 'Gagal memuat model.';
         setStatus('Model belum siap');
         inject('window.__sandevSetModelLoaded(false);if(window.onModelLoadError)window.onModelLoadError(' + JSON.stringify(message) + ')');
