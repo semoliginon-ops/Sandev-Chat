@@ -339,6 +339,7 @@ class MainActivity : AppCompatActivity() {
                 activeBotId = list[index].id
                 prefs().edit().putString(KEY_ACTIVE_BOT, activeBotId).apply()
                 header.text = list[index].name
+                applyImages()
                 if (engineReady && activeModelName != null) {
                     lifecycleScope.launch(Dispatchers.IO) {
                         try { engine.setSystemPrompt(list[index].systemPrompt) } catch (_: Exception) {}
@@ -370,6 +371,7 @@ class MainActivity : AppCompatActivity() {
                 saveBots()
                 prefs().edit().putString(KEY_ACTIVE_BOT, activeBotId).apply()
                 header.text = bot.name
+                applyImages()
                 if (engineReady && activeModelName != null) {
                     lifecycleScope.launch(Dispatchers.IO) {
                         try { engine.setSystemPrompt(bot.systemPrompt) } catch (_: Exception) {}
@@ -410,7 +412,7 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val dir = File(filesDir, "custom").apply { mkdirs() }
-                val target = File(dir, if (profile) "profile-image" else "chat-background")
+                val target = File(dir, if (profile) "bot-${activeBotId}-profile" else "chat-background")
                 contentResolver.openInputStream(uri).use { source ->
                     requireNotNull(source) { "Gambar tidak bisa dibuka." }
                     FileOutputStream(target).use { sink -> source.copyTo(sink) }
@@ -419,6 +421,11 @@ class MainActivity : AppCompatActivity() {
                     if (profile) {
                         profilePath = target.absolutePath
                         prefs().edit().putString(KEY_PROFILE, profilePath).apply()
+                        val botIndex = bots.indexOfFirst { it.id == activeBotId }
+                        if (botIndex >= 0) {
+                            bots[botIndex] = bots[botIndex].copy(avatarPath = target.absolutePath)
+                            saveBots()
+                        }
                     } else {
                         backgroundPath = target.absolutePath
                         prefs().edit().putString(KEY_BACKGROUND, backgroundPath).apply()
@@ -434,9 +441,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun applyImages() {
         if (!::profileImage.isInitialized) return
-        profilePath?.let { path ->
-            val file = File(path)
-            if (file.exists()) BitmapFactory.decodeFile(path)?.let { profileImage.setImageBitmap(it) }
+        val avatar = activeBot().avatarPath ?: profilePath
+        if (!avatar.isNullOrBlank() && File(avatar).exists()) {
+            BitmapFactory.decodeFile(avatar)?.let { profileImage.setImageBitmap(it) }
+        } else {
+            profileImage.setImageDrawable(null)
         }
         backgroundPath?.let { path ->
             val file = File(path)
@@ -591,7 +600,7 @@ class MainActivity : AppCompatActivity() {
             val array = JSONArray(rawBots)
             for (i in 0 until array.length()) {
                 val item = array.getJSONObject(i)
-                bots.add(BotProfile(item.optString("id"), item.optString("name"), item.optString("prompt")))
+                bots.add(BotProfile(item.optString("id"), item.optString("name"), item.optString("prompt"), item.optString("avatar").takeIf { it.isNotBlank() }))
             }
         } catch (_: Exception) {}
         if (bots.none { it.id == "default" }) bots.add(0, BotProfile("default", "Sandev", ""))
@@ -605,7 +614,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveBots() {
         val array = JSONArray()
-        bots.forEach { array.put(JSONObject().put("id", it.id).put("name", it.name).put("prompt", it.systemPrompt)) }
+        bots.forEach { array.put(JSONObject().put("id", it.id).put("name", it.name).put("prompt", it.systemPrompt).put("avatar", it.avatarPath ?: "")) }
         prefs().edit().putString(KEY_BOTS, array.toString()).apply()
     }
 
@@ -638,7 +647,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private data class ChatMessage(val role: String, var text: String)
-    private data class BotProfile(val id: String, val name: String, val systemPrompt: String)
+    private data class BotProfile(val id: String, val name: String, val systemPrompt: String, val avatarPath: String? = null)
     private data class Palette(
         val background: Int, val panel: Int, val text: Int, val muted: Int,
         val accent: Int, val userBubble: Int, val botBubble: Int
