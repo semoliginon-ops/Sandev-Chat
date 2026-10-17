@@ -61,7 +61,9 @@ export default function App(): React.JSX.Element {
 
   const chooseModel = useCallback(async () => {
     try {
-      const pickedFiles = await pick({type: [types.allFiles], mode: 'import'});\n      const picked = pickedFiles[0];\n      if (!picked) return;
+      const pickedFiles = await pick({type: [types.allFiles], mode: 'import'});
+      const picked = pickedFiles[0];
+      if (!picked) return;
       const uri = picked.fileCopyUri || picked.uri;
       const path = decodeURIComponent(uri.replace(/^file:\/\//, ''));
       if (!path.toLowerCase().endsWith('.gguf')) {
