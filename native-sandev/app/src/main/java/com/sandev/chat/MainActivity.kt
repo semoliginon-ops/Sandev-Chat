@@ -57,6 +57,7 @@ class MainActivity : AppCompatActivity() {
     private val bots = mutableListOf<BotProfile>()
     private var activeBotId = "default"
     private var activeModelName: String? = null
+    private var pendingModelFile: File? = null
     private var themeIndex = 0
     private var profilePath: String? = null
     private var backgroundPath: String? = null
@@ -96,9 +97,15 @@ class MainActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     status.text = "Siap. Pilih model Q4_K_M GGUF."
                     engineReady = true
-                    activeModelName?.let { name ->
-                        val model = modelFile(name)
-                        if (model.exists()) loadModelFile(model, false)
+                    val pending = pendingModelFile
+                    if (pending != null && pending.exists()) {
+                        pendingModelFile = null
+                        loadModelFile(pending, true)
+                    } else {
+                        activeModelName?.let { name ->
+                            val model = modelFile(name)
+                            if (model.exists()) loadModelFile(model, false)
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -296,7 +303,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadModelFile(file: File, showToast: Boolean) {
         if (!engineReady) {
-            status.text = "Engine masih disiapkan..."
+            pendingModelFile = file
+            status.text = "Model tersimpan; menunggu engine..."
+            input.isEnabled = true
+            sendButton.isEnabled = true
             return
         }
         sendButton.isEnabled = false
