@@ -476,7 +476,7 @@ class MainActivity : AppCompatActivity() {
                             saveMessages()
                         }
                         if (engineReady && activeModelName != null) lifecycleScope.launch {
-                            try { engine.setSystemPrompt(bot.systemPrompt.ifBlank { DEFAULT_SYSTEM_PROMPT }) } catch (_: Exception) {}
+                            try { engine.setSystemPrompt(buildCharacterSystemPrompt(bot)) } catch (_: Exception) {}
                         }
                         renderPage()
                     }
@@ -790,7 +790,7 @@ class MainActivity : AppCompatActivity() {
                     else -> error("Engine masih sibuk. Tunggu proses model selesai.")
                 }
                 engine.loadModel(file.absolutePath)
-                engine.setSystemPrompt(activeBot().systemPrompt.ifBlank { DEFAULT_SYSTEM_PROMPT })
+                engine.setSystemPrompt(buildCharacterSystemPrompt(activeBot()))
                 withContext(Dispatchers.Main) {
                     activeModelName = file.name
                     prefs().edit().putString(KEY_ACTIVE_MODEL, file.name).apply()
@@ -1140,6 +1140,9 @@ class MainActivity : AppCompatActivity() {
         status.text = "Bot sedang mengetik..."
         generationJob = lifecycleScope.launch(Dispatchers.IO) {
             try {
+                // Re-apply the selected character's identity immediately before every generation.
+                // This prevents a stale prompt from the previously selected bot leaking into the chat.
+                engine.setSystemPrompt(buildCharacterSystemPrompt(activeBot()))
                 engine.sendUserPrompt(text, predictLength = 256).collect { token ->
                     assistant.text += token
                     withContext(Dispatchers.Main) {
@@ -1391,6 +1394,34 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun activeBot(): BotProfile = bots.firstOrNull { it.id == activeBotId } ?: bots.first()
+
+    private fun buildCharacterSystemPrompt(bot: BotProfile): String = buildString {
+        appendLine("IDENTITAS KARAKTER — INI WAJIB KONSISTEN")
+        appendLine("Nama karakter kamu adalah: ${bot.name}.")
+        if (bot.tagline.isNotBlank()) appendLine("Ciri singkat karakter: ${bot.tagline}.")
+        if (bot.description.isNotBlank()) appendLine("Latar dan deskripsi karakter: ${bot.description}")
+        appendLine()
+        appendLine("KEPRIBADIAN DAN INSTRUKSI PEMBUAT")
+        appendLine(bot.systemPrompt.ifBlank { DEFAULT_SYSTEM_PROMPT })
+        if (bot.greeting.isNotBlank()) {
+            appendLine()
+            appendLine("SAPaan PEMBUKA KARAKTER (sudah ditampilkan sebagai pesan awal; jangan mengulanginya tanpa alasan):")
+            appendLine(bot.greeting)
+        }
+        if (bot.exampleDialog.isNotBlank()) {
+            appendLine()
+            appendLine("CONTOH GAYA DIALOG; tiru nada dan karakter, bukan menyalin secara otomatis:")
+            appendLine(bot.exampleDialog)
+        }
+        appendLine()
+        appendLine("ATURAN PERCAKAPAN")
+        appendLine("- Tetap berbicara dan bertindak sesuai nama, kepribadian, latar, dan hubungan yang ditentukan pembuat.")
+        appendLine("- Jangan mengganti identitasmu dengan Gemini, Google, ChatGPT, atau layanan/model lain.")
+        appendLine("- Jika ditanya siapa dirimu, perkenalkan diri sebagai ${bot.name} sesuai karakter, bukan mengarang identitas layanan AI lain.")
+        appendLine("- Jangan mengulang sapaan pertama di setiap balasan. Tanggapi isi pesan terbaru secara alami.")
+        appendLine("- Jaga kesinambungan fakta dan hubungan dalam riwayat chat karakter ini. Jangan mengarang bahwa kamu mengetahui hal yang belum pernah diceritakan.")
+        appendLine("- Gunakan bahasa yang dipakai pengguna, kecuali pembuat karakter menentukan bahasa lain.")
+    }.trim()
 
     private fun modelsDir() = File(filesDir, "models")
     private fun modelFiles() = modelsDir().listFiles { f -> f.isFile && f.extension.equals("gguf", true) }?.sortedBy { it.name } ?: emptyList()
