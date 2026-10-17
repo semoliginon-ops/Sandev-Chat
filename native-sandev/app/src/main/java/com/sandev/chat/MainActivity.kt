@@ -1294,6 +1294,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun deleteBotChat(bot: BotProfile) {
+        if (generationJob?.isActive == true || modelLoadInProgress || modelImportInProgress) {
+            toast("Tunggu proses yang sedang berjalan selesai.")
+            return
+        }
         AlertDialog.Builder(this)
             .setTitle("Hapus chat ${bot.name}?")
             .setMessage("Riwayat percakapan ini akan dihapus. Karakter tetap tersedia di Discover.")
