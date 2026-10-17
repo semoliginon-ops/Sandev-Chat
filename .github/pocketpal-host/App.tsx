@@ -64,7 +64,7 @@ export default function App(): React.JSX.Element {
       const pickedFiles = await pick({type: [types.allFiles], mode: 'import'});
       const picked = pickedFiles[0];
       if (!picked) return;
-      const uri = picked.fileCopyUri || picked.uri;
+      const uri = picked.uri;
       const path = decodeURIComponent(uri.replace(/^file:\/\//, ''));
       if (!path.toLowerCase().endsWith('.gguf')) {
         Alert.alert('Model tidak valid', 'Pilih file model berformat .gguf.');
