@@ -51,6 +51,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var engine: InferenceEngine
     private var engineReady = false
     private var modelLoadInProgress = false
+    private var modelImportInProgress = false
     private var generationJob: Job? = null
     private var mediaPlayer: MediaPlayer? = null
     private var currentMusicName: String? = null
@@ -224,7 +225,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showModelMenu() {
-        if (generationJob?.isActive == true || modelLoadInProgress) {
+        if (generationJob?.isActive == true || modelLoadInProgress || modelImportInProgress) {
             toast("Tunggu proses model atau jawaban selesai dulu.")
             return
         }
@@ -261,8 +262,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun importModel(uri: Uri) {
+        if (generationJob?.isActive == true || modelLoadInProgress || modelImportInProgress) {
+            toast("Tunggu proses model atau jawaban selesai dulu.")
+            return
+        }
+        modelImportInProgress = true
         val originalName = displayName(contentResolver, uri) ?: "model.gguf"
         if (!originalName.lowercase().endsWith(".gguf")) {
+            modelImportInProgress = false
             toast("Pilih file model berformat .gguf.")
             return
         }
@@ -301,6 +308,10 @@ class MainActivity : AppCompatActivity() {
                     status.text = "Impor gagal."
                     toast("Gagal menyimpan model: ${e.message}")
                     sendButton.isEnabled = true
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    modelImportInProgress = false
                 }
             }
         }
