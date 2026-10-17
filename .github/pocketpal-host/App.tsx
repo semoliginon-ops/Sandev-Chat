@@ -77,7 +77,6 @@ export default function App(): React.JSX.Element {
         n_ctx: 2048,
         n_batch: 256,
         n_threads: 4,
-        n_threads_batch: 4,
         n_gpu_layers: 0,
         use_mlock: false,
       });
@@ -117,7 +116,7 @@ export default function App(): React.JSX.Element {
           n_predict: nPredict,
           temperature: Number(args[2] ?? 0.7),
           top_p: Number(args[3] ?? 0.9),
-          repeat_penalty: Number(args[4] ?? 1.1),
+          penalty_repeat: Number(args[4] ?? 1.1),
           stop: STOP,
           jinja: true,
         });
