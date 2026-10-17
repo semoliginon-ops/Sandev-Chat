@@ -39,7 +39,7 @@ replacement = r'''    private void loadSelectedModel(Uri uri, int contextLength)
                 }
                 if (staged.exists() && !staged.delete()) throw new IOException("Tidak bisa mengganti model lama. Periksa ruang penyimpanan.");
                 if (!temp.renameTo(staged)) throw new IOException("Gagal menyiapkan file model di penyimpanan aplikasi. Pastikan ruang kosong cukup.");
-                // Match the uploaded stable Luna #76 APK for a controlled baseline.
+                // Keep the default context conservative for mobile memory usage.
                 int safeContext = 768;
                 int safeThreads = 4;
                 boolean ok = NativeLlama.loadModel(staged.getAbsolutePath(), safeContext, safeThreads);
