@@ -2,7 +2,7 @@ name: Build Sandev Chat APK
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    branches: [main, master, optimization/pocketpal-inference-tuning]
     paths:
       - 'sandev-chat-alpha-0.2.zip'
       - '.github/workflows/android.yml'
