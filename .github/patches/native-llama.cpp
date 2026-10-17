@@ -7,6 +7,7 @@
 #include <ctime>
 #include <chrono>
 #include <utility>
+#include <unistd.h>
 #include "llama.h"
 
 #define LOG_TAG "SandevLlama"
@@ -51,25 +52,27 @@ Java_com_sandev_chat_NativeLlama_loadModel(JNIEnv * env, jclass, jstring jpath, 
         return JNI_FALSE;
     }
 
-    // Match the uploaded stable Luna #76 APK exactly for the baseline.
-    // Keep context and CPU scheduling fixed while diagnosing Sandev latency.
-    (void) contextLength;
-    (void) threads;
-    g_ctx_size = 768;
+    // Keep generation threads conservative, but allow prompt prefill to use
+    // a few more CPU workers on multi-core phones.
+    const long online_cores = sysconf(_SC_NPROCESSORS_ONLN);
+    const int available_cores = online_cores > 0 ? static_cast<int>(online_cores) : 4;
+    const int generation_threads = std::max(2, std::min(4, threads > 0 ? static_cast<int>(threads) : available_cores));
+    const int batch_threads = std::max(generation_threads, std::min(6, available_cores));
+    g_ctx_size = contextLength > 0 ? std::max(512, std::min(1024, static_cast<int>(contextLength))) : 768;
     llama_context_params context_params = llama_context_default_params();
-    context_params.n_ctx = 768;
+    context_params.n_ctx = g_ctx_size;
     context_params.n_batch = 512;
-    context_params.n_threads = 4;
-    context_params.n_threads_batch = 4;
+    context_params.n_threads = generation_threads;
+    context_params.n_threads_batch = batch_threads;
     g_ctx = llama_init_from_model(g_model, context_params);
     if (!g_ctx) {
         LOGE("llama_init_from_model failed");
         unload_locked();
         return JNI_FALSE;
     }
-    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "timing model_load_ms=%lld context=%d threads=%d",
+    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "timing model_load_ms=%lld context=%d threads=%d batch_threads=%d cpu_cores=%d gpu_layers=0",
         static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - model_load_start).count()),
-        g_ctx_size, context_params.n_threads);
+        g_ctx_size, context_params.n_threads, context_params.n_threads_batch, available_cores);
     return JNI_TRUE;
 }
 
@@ -217,11 +220,14 @@ Java_com_sandev_chat_NativeLlama_generate(JNIEnv * env, jclass, jstring jprompt,
     }
     g_cached_prompt_tokens = tokens;
     const auto prefill_done = std::chrono::steady_clock::now();
+    const auto tokenize_ms = std::chrono::duration_cast<std::chrono::milliseconds>(tokenized_at - generation_start).count();
+    const auto prefill_ms = std::chrono::duration_cast<std::chrono::milliseconds>(prefill_done - tokenized_at).count();
+    const double prefill_tokens_per_sec = prefill_ms > 0 ? (1000.0 * n_prompt / prefill_ms) : 0.0;
     __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
-        "timing tokenize_ms=%lld prefill_ms=%lld prompt_tokens=%d reused_prefix=%zu",
-        static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(tokenized_at - generation_start).count()),
-        static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(prefill_done - tokenized_at).count()),
-        n_prompt, common_prefix);
+        "timing tokenize_ms=%lld prefill_ms=%lld prompt_tokens=%d reused_prefix=%zu prefill_tokens_per_sec=%.2f",
+        static_cast<long long>(tokenize_ms),
+        static_cast<long long>(prefill_ms),
+        n_prompt, common_prefix, prefill_tokens_per_sec);
 
     llama_sampler * sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
     if (!sampler) { llama_memory_clear(llama_get_memory(g_ctx), true); return env->NewStringUTF("SAMPLER_ERROR: sampler tidak dapat dibuat."); }
@@ -238,8 +244,8 @@ Java_com_sandev_chat_NativeLlama_generate(JNIEnv * env, jclass, jstring jprompt,
     int generated_tokens = 0;
     for (int i = 0; i < limit; ++i) {
         const llama_token token = llama_sampler_sample(sampler, g_ctx, -1);
-        ++generated_tokens;
         if (llama_vocab_is_eog(vocab, token)) break;
+        ++generated_tokens;
         char piece[4096];
         const int piece_size = llama_token_to_piece(vocab, token, piece, sizeof(piece), 0, true);
         if (piece_size > 0) output.append(piece, static_cast<size_t>(piece_size));
@@ -249,10 +255,12 @@ Java_com_sandev_chat_NativeLlama_generate(JNIEnv * env, jclass, jstring jprompt,
     }
     llama_sampler_free(sampler);
     const auto generation_done = std::chrono::steady_clock::now();
+    const auto generation_ms = std::chrono::duration_cast<std::chrono::milliseconds>(generation_done - prefill_done).count();
+    const double generation_tokens_per_sec = generation_ms > 0 ? (1000.0 * generated_tokens / generation_ms) : 0.0;
     __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
-        "timing generation_ms=%lld generated_tokens=%d output_bytes=%zu",
-        static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(generation_done - prefill_done).count()),
-        generated_tokens, output.size());
+        "timing generation_ms=%lld generated_tokens=%d generation_tokens_per_sec=%.2f output_bytes=%zu",
+        static_cast<long long>(generation_ms),
+        generated_tokens, generation_tokens_per_sec, output.size());
     if (output.empty()) output = "Model tidak menghasilkan teks. Coba prompt singkat atau model lain.";
     return env->NewStringUTF(output.c_str());
 }
