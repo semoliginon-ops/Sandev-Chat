@@ -26,6 +26,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.arm.aichat.AiChat
 import com.arm.aichat.InferenceEngine
+import com.arm.aichat.gguf.GgufMetadataReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -205,7 +206,7 @@ class MainActivity : AppCompatActivity() {
     private fun showModelMenu() {
         val models = modelFiles()
         val options = arrayOf("Impor model GGUF", "Pilih model tersimpan", "Hapus model")
-        AlertDialog.Builder(this).setTitle("Model GGUF (Q4_K_M disarankan)")
+        AlertDialog.Builder(this).setTitle("Model Q4_K_M GGUF")
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> modelPicker.launch(arrayOf("*/*"))
@@ -243,10 +244,21 @@ class MainActivity : AppCompatActivity() {
             toast("Pilih file model berformat .gguf.")
             return
         }
-        status.text = "Menyalin model ke penyimpanan aplikasi..."
+        status.text = "Memeriksa metadata Q4_K_M..."
         sendButton.isEnabled = false
         lifecycleScope.launch(Dispatchers.IO) {
             try {
+                val metadata = contentResolver.openInputStream(uri)?.use { GgufMetadataReader.create().readStructuredMetadata(it) }
+                    ?: error("File model tidak bisa dibaca.")
+                if (metadata.architecture?.fileType != 15) {
+                    withContext(Dispatchers.Main) {
+                        status.text = "Model ditolak: bukan Q4_K_M."
+                        toast("Pilih GGUF dengan quantization Q4_K_M.")
+                        sendButton.isEnabled = true
+                    }
+                    return@launch
+                }
+                withContext(Dispatchers.Main) { status.text = "Menyalin model ke penyimpanan aplikasi..." }
                 val dir = modelsDir().apply { mkdirs() }
                 val safeName = safeFileName(originalName)
                 var target = File(dir, safeName)
