@@ -118,8 +118,9 @@ export default function App(): React.JSX.Element {
       return;
     }
     if (data.__sandevDiag === 'error' || data.__sandevDiag === 'rejection') {
-      const detail = String(data.message || 'Unknown JavaScript error').slice(0, 220);
-      setStatus('UI JS ' + data.__sandevDiag + ': ' + detail);
+      const detail = String(data.message || 'Unknown JavaScript error').slice(0, 160);
+      const location = data.source ? String(data.source).split('/').pop() + ':' + String(data.line || 0) : 'source tidak diketahui';
+      setStatus('UI JS ' + data.__sandevDiag + ': ' + detail + ' [' + location + ']');
       console.warn('[SANDEV WebView]', data.__sandevDiag, detail, data.source || '', data.line || '');
       return;
     }
@@ -163,7 +164,11 @@ export default function App(): React.JSX.Element {
           reply(id, 'Model selesai memproses tetapi tidak menghasilkan teks. Coba pesan lebih pendek atau model GGUF lain.');
           setStatus('Model siap — jawaban kosong');
         } else {
+          // The legacy Sandev UI uses callback-style completion handlers.
+          // Resolve the bridge promise and notify the callback so its chat bubble
+          // is updated even though the old UI does not consume the returned value.
           reply(id, answer);
+          inject('if(typeof window.onAIReply==="function")window.onAIReply(' + JSON.stringify(answer) + ')');
           setStatus('Model siap');
         }
       } catch (e: any) {
@@ -171,6 +176,7 @@ export default function App(): React.JSX.Element {
         // Resolve with a visible diagnostic instead of rejecting the WebView
         // promise, which otherwise leaves the legacy send spinner running.
         reply(id, 'Gagal menghasilkan jawaban: ' + detail, false);
+        inject('if(typeof window.onAIError==="function")window.onAIError(' + JSON.stringify(detail) + ')');
         setStatus('Inferensi gagal: ' + detail.slice(0, 90));
       } finally { busy.current = false; }
       return;
