@@ -38,11 +38,11 @@ source = entry.read_text(encoding="utf-8")
 # WebView versions; if the old UI starts first, its controls can fail globally.
 host_app = root / ".github/pocketpal-host/App.tsx"
 host_source = host_app.read_text(encoding="utf-8")
-bridge_match = re.search(r"const BRIDGE = `([\\s\\S]*?)`;", host_source)
+bridge_match = re.search(r"const BRIDGE = `([\s\S]*?)`;", host_source)
 if not bridge_match:
     raise SystemExit("Could not extract the native bridge bootstrap from App.tsx")
-bridge_script = "<script>\\n" + bridge_match.group(1) + "\\n</script>\\n"
-head_match = re.search(r"<head\\b[^>]*>", source, flags=re.IGNORECASE)
+bridge_script = "<script>\n" + bridge_match.group(1) + "\n</script>\n"
+head_match = re.search(r"<head\b[^>]*>", source, flags=re.IGNORECASE)
 if head_match:
     source = source[:head_match.end()] + "\\n" + bridge_script + source[head_match.end():]
 else:
