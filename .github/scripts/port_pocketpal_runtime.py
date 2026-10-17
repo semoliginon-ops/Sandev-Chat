@@ -35,14 +35,14 @@ entry = dest / html.name
 source = entry.read_text(encoding="utf-8")
 # Replace the old Llama-specific prompt wrapper with structured role markers so
 # llama.rn can apply the GGUF's own chat template, as PocketPal does.
-generate_match = re.search(r"(?:Sandev|Android)\\.generate\\(prompt,max,settings\\.temp,settings\\.topP,settings\\.repeat\\)", source)
+generate_match = re.search(r"(?:Sandev|Android)\.generate\(prompt,max,settings\.temp,settings\.topP,settings\.repeat\)", source)
 if not generate_match:
     raise SystemExit("Could not locate the original generate(prompt, max, ...) call")
 prompt_start = source.rfind("let prompt=", 0, generate_match.start())
 statement_end = source.find(";", generate_match.start())
 if prompt_start < 0 or statement_end < 0:
     raise SystemExit("Could not isolate Sandev prompt-building statement")
-new_prompt = r"""let prompt='[[SANDEV_SYSTEM]]\\n'+st+'\\nBalas dalam bahasa Indonesia yang natural. Jika diminta ngobrol, jawaban boleh panjang dan ekspresif. Jangan menulis label USER atau ASSISTANT di jawaban.';history.forEach(m=>{prompt+=(m.role==='user'?'\\n[[SANDEV_HISTORY_USER]]\\n':'\\n[[SANDEV_HISTORY_ASSISTANT]]\\n')+m.text});let max= settings.mode==='auto' ? (settings.lengthStyle==='long'?384:192) : Math.min(512,settings.tokens);Sandev.generate(prompt,max,settings.temp,settings.topP,settings.repeat);"""
+new_prompt = r"""let prompt='[[SANDEV_SYSTEM]]\n'+st+'\nBalas dalam bahasa Indonesia yang natural. Jika diminta ngobrol, jawaban boleh panjang dan ekspresif. Jangan menulis label USER atau ASSISTANT di jawaban.';history.forEach(m=>{prompt+=(m.role==='user'?'\n[[SANDEV_HISTORY_USER]]\n':'\n[[SANDEV_HISTORY_ASSISTANT]]\n')+m.text});let max= settings.mode==='auto' ? (settings.lengthStyle==='long'?384:192) : Math.min(512,settings.tokens);Sandev.generate(prompt,max,settings.temp,settings.topP,settings.repeat);"""
 source = source[:prompt_start] + new_prompt + source[statement_end + 1:]
 print("Patched Sandev prompt to use model-native GGUF chat templates.")
 old = "Sandev.generate("
