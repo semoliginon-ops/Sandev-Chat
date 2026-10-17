@@ -98,6 +98,17 @@ export default function App(): React.JSX.Element {
   const onMessage = useCallback(async (event: WebViewMessageEvent) => {
     let data: any;
     try { data = JSON.parse(event.nativeEvent.data); } catch { return; }
+    if (data.__sandevDiag === 'tap') {
+      const target = [data.target, data.id ? '#' + data.id : '', data.label || ''].filter(Boolean).join(' ');
+      setStatus('UI tap received: ' + target.slice(0, 100));
+      return;
+    }
+    if (data.__sandevDiag === 'error' || data.__sandevDiag === 'rejection') {
+      const detail = String(data.message || 'Unknown JavaScript error').slice(0, 220);
+      setStatus('UI JS ' + data.__sandevDiag + ': ' + detail);
+      console.warn('[SANDEV WebView]', data.__sandevDiag, detail, data.source || '', data.line || '');
+      return;
+    }
     const method = String(data.method || '');
     const id = Number(data.requestId || 0);
     const args = Array.isArray(data.args) ? data.args : [];
@@ -163,6 +174,9 @@ export default function App(): React.JSX.Element {
   return (
     <SafeAreaView style={{flex: 1, backgroundColor: '#101018'}}>
       <StatusBar barStyle="light-content" backgroundColor="#101018" />
+      <View style={{minHeight:26,justifyContent:'center',paddingHorizontal:8,backgroundColor:'#29253a'}}>
+        <Text numberOfLines={1} style={{color:'#f2edff',fontSize:11}}>Debug: {status}</Text>
+      </View>
       <WebView
         ref={web}
         source={{uri: 'file:///android_asset/sandev/index.html'}}
