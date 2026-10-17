@@ -441,7 +441,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun applyImages() {
         if (!::profileImage.isInitialized) return
-        val avatar = activeBot().avatarPath ?: profilePath
+        val avatar = activeBot().avatarPath
         if (!avatar.isNullOrBlank() && File(avatar).exists()) {
             BitmapFactory.decodeFile(avatar)?.let { profileImage.setImageBitmap(it) }
         } else {
