@@ -18,6 +18,7 @@ import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -417,7 +418,18 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(14), dp(12), dp(14), dp(12))
             background = panelBackground(p.panel, p.muted, 14)
         }
-        chatColumn.addView(search, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(14) })
+        chatColumn.addView(search, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(10) })
+        var selectedCategory = "Semua"
+        val categories = listOf("Semua", "Roleplay", "Fantasi", "Romansa", "Buatanmu")
+        val categoryRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val categoryScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(categoryRow)
+        }
+        chatColumn.addView(categoryScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(14) })
         chatColumn.addView(TextView(this).apply {
             text = "KARAKTER UNTUKMU"
             textSize = 11f
@@ -430,9 +442,20 @@ class MainActivity : AppCompatActivity() {
         chatColumn.addView(cards)
         fun populate(filter: String) {
             cards.removeAllViews()
-            val visible = bots.filter {
-                filter.isBlank() || it.name.contains(filter, true) ||
-                    it.tagline.contains(filter, true) || it.description.contains(filter, true)
+            val visible = bots.filter { bot ->
+                val queryMatches = filter.isBlank() || bot.name.contains(filter, true) ||
+                    bot.tagline.contains(filter, true) || bot.description.contains(filter, true)
+                val searchable = listOf(bot.name, bot.tagline, bot.description, bot.systemPrompt)
+                val categoryMatches = when (selectedCategory) {
+                    "Roleplay" -> bot.id != "default" && (bot.description.isNotBlank() || bot.systemPrompt.isNotBlank())
+                    "Fantasi" -> listOf("fantasy", "fantasi", "sihir", "magic", "naga", "elf", "wizard", "dragon")
+                        .any { keyword -> searchable.any { value -> value.contains(keyword, true) } }
+                    "Romansa" -> listOf("romansa", "romantis", "romance", "cinta", "love", "pasangan")
+                        .any { keyword -> searchable.any { value -> value.contains(keyword, true) } }
+                    "Buatanmu" -> bot.id != "default"
+                    else -> true
+                }
+                queryMatches && categoryMatches
             }
             visible.forEach { bot ->
                 val card = LinearLayout(this).apply {
@@ -503,11 +526,35 @@ class MainActivity : AppCompatActivity() {
                 setPadding(dp(8), dp(20), dp(8), dp(20))
             })
         }
+        fun buildCategoryChips() {
+            categoryRow.removeAllViews()
+            categories.forEach { category ->
+                val selected = category == selectedCategory
+                val chip = TextView(this).apply {
+                    text = category
+                    textSize = 12f
+                    typeface = Typeface.DEFAULT_BOLD
+                    gravity = Gravity.CENTER
+                    setPadding(dp(14), dp(8), dp(14), dp(8))
+                    setTextColor(if (selected) Color.rgb(10, 16, 29) else p.text)
+                    background = panelBackground(if (selected) p.accent else p.panel, if (selected) p.accent else p.muted, 24)
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener {
+                        selectedCategory = category
+                        buildCategoryChips()
+                        populate(search.text.toString())
+                    }
+                }
+                categoryRow.addView(chip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36)).apply { marginEnd = dp(8) })
+            }
+        }
         search.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { populate(s?.toString().orEmpty()) }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
+        buildCategoryChips()
         populate("")
     }
 
