@@ -120,7 +120,7 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
         header = TextView(this).apply {
-            text = "Sandev Chat"
+            text = activeBot().name
             textSize = 20f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(palette.text)
@@ -205,7 +205,7 @@ class MainActivity : AppCompatActivity() {
     private fun showModelMenu() {
         val models = modelFiles()
         val options = arrayOf("Impor model GGUF", "Pilih model tersimpan", "Hapus model")
-        AlertDialog.Builder(this).setTitle("Model Q4_K_M / GGUF")
+        AlertDialog.Builder(this).setTitle("Model GGUF (Q4_K_M disarankan)")
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> modelPicker.launch(arrayOf("*/*"))
@@ -390,8 +390,13 @@ class MainActivity : AppCompatActivity() {
         root.setBackgroundColor(p.background)
         header.setTextColor(p.text)
         status.setTextColor(p.muted)
-        chatScroll.setBackgroundColor(p.panel)
-        chatColumn.setBackgroundColor(p.panel)
+        if (backgroundPath.isNullOrBlank()) {
+            chatScroll.setBackgroundColor(p.panel)
+            chatColumn.setBackgroundColor(p.panel)
+        } else {
+            chatColumn.setBackgroundColor(Color.TRANSPARENT)
+            applyImages()
+        }
         input.setTextColor(p.text)
         input.setHintTextColor(p.muted)
         input.setBackgroundColor(p.panel)
