@@ -317,6 +317,8 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                    activeModelName = null
+                    prefs().edit().remove(KEY_ACTIVE_MODEL).apply()
                     status.text = "Model gagal dimuat: ${e.message ?: "periksa format/model"}"
                     input.isEnabled = true
                     sendButton.isEnabled = true
@@ -462,19 +464,30 @@ class MainActivity : AppCompatActivity() {
         if (!::profileImage.isInitialized) return
         val avatar = activeBot().avatarPath
         if (!avatar.isNullOrBlank() && File(avatar).exists()) {
-            BitmapFactory.decodeFile(avatar)?.let { profileImage.setImageBitmap(it) }
+            decodeScaledBitmap(avatar, 256)?.let { profileImage.setImageBitmap(it) }
         } else {
             profileImage.setImageDrawable(null)
         }
         backgroundPath?.let { path ->
             val file = File(path)
             if (file.exists()) {
-                val bitmap = BitmapFactory.decodeFile(path)
+                val bitmap = decodeScaledBitmap(path, 1280)
                 if (bitmap != null) {
                     chatScroll.background = android.graphics.drawable.BitmapDrawable(resources, bitmap)
                 }
             }
         }
+    }
+
+    private fun decodeScaledBitmap(path: String, maxDimension: Int): android.graphics.Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / sample > maxDimension || bounds.outHeight / sample > maxDimension) {
+            sample *= 2
+        }
+        return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
     }
 
     private fun showMusicMenu() {
