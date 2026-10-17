@@ -104,23 +104,22 @@ if old not in source:
     raise SystemExit("Expected generate() call not found; refusing to ship a broken UI bridge")
 source = source.replace(old, "await " + old, 1)
 pos = source.index("await " + old)
-arrow = source.rfind("=>", 0, pos)
-fn = source.rfind("function", 0, pos)
-if arrow > fn:
-    prefix = source[:arrow]
-    close = prefix.rfind(")")
-    depth, opening = 0, -1
-    for i in range(close, -1, -1):
-        if prefix[i] == ")": depth += 1
-        elif prefix[i] == "(":
-            depth -= 1
-            if depth == 0:
-                opening = i
-                break
-    if opening >= 0 and "async" not in prefix[max(0, opening - 10):opening]:
-        source = source[:opening] + "async " + source[opening:]
-elif fn >= 0 and "async" not in source[max(0, fn - 8):fn]:
-    source = source[:fn] + "async " + source[fn:]
+# The generated await belongs to sendMessage(). The prompt replacement contains
+# a history.forEach(m => ...) arrow expression after the callsite's function
+# start, so searching for the nearest arrow incorrectly marks that callback
+# async and leaves sendMessage() non-async (which makes the entire script fail
+# to parse and all inline onclick handlers disappear).
+send_fn = re.search(r"function\\s+sendMessage\\s*\\(", source)
+if send_fn and send_fn.start() < pos:
+    # Confirm no later function declaration starts between sendMessage and the
+    # generate call; if there is one, refuse to guess which function to modify.
+    later_fn = re.search(r"function\\s+[A-Za-z_$][\\w$]*\\s*\\(", source[send_fn.end():pos])
+    if later_fn:
+        raise SystemExit("Unexpected nested function before generate() inside sendMessage; refusing unsafe async patch")
+    if not re.search(r"async\\s+function\\s+sendMessage\\s*\\(", source):
+        source = source[:send_fn.start()] + "async " + source[send_fn.start():]
+else:
+    raise SystemExit("Could not identify sendMessage() as the generate() caller; refusing to ship")
 entry.write_text(source, encoding="utf-8")
 
 # Copy the maintained host source from the repository into the generated RN template.
