@@ -311,7 +311,7 @@ class MainActivity : AppCompatActivity() {
         header.text = "Discover"
         addSectionTitle("Temukan karakter", "Karakter lokalmu, siap diajak mengobrol kapan saja.")
         val search = EditText(this).apply {
-            hint = "Cari karakter..."; singleLine = true; textSize = 14f
+            hint = "Cari karakter..."; setSingleLine(true); textSize = 14f
             setTextColor(palettes[themeIndex].text); setHintTextColor(palettes[themeIndex].muted)
             setBackgroundColor(palettes[themeIndex].panel)
         }
@@ -332,7 +332,7 @@ class MainActivity : AppCompatActivity() {
                         prefs().edit().putString(KEY_ACTIVE_BOT, activeBotId).apply()
                         currentPage = "chats"
                         if (bot.greeting.isNotBlank() && messages.isEmpty()) { messages.add(ChatMessage("assistant", bot.greeting)); saveMessages() }
-                        if (engineReady && activeModelName != null) try { engine.setSystemPrompt(bot.systemPrompt.ifBlank { DEFAULT_SYSTEM_PROMPT }) } catch (_: Exception) {}
+                        if (engineReady && activeModelName != null) lifecycleScope.launch { try { engine.setSystemPrompt(bot.systemPrompt.ifBlank { DEFAULT_SYSTEM_PROMPT }) } catch (_: Exception) {} }
                         renderPage()
                     }
                 }
@@ -381,7 +381,7 @@ class MainActivity : AppCompatActivity() {
         chatColumn.addView(avatar)
         addAction(chatColumn, "Ganti foto pengguna") { userImagePicker.launch(arrayOf("image/*")) }
         val name = EditText(this).apply { hint = "Nama tampilan"; setText(userName); setTextColor(p.text); setHintTextColor(p.muted) }
-        val handle = EditText(this).apply { hint = "Username (opsional)"; setText(userHandle); setTextColor(p.text); setHintTextColor(p.muted); singleLine = true }
+        val handle = EditText(this).apply { hint = "Username (opsional)"; setText(userHandle); setTextColor(p.text); setHintTextColor(p.muted); setSingleLine(true) }
         val bio = EditText(this).apply { hint = "Bio singkat"; setText(userBio); setTextColor(p.text); setHintTextColor(p.muted); minLines = 2; gravity = Gravity.TOP }
         val persona = EditText(this).apply { hint = "Persona / informasi diri untuk roleplay"; setText(userPersona); setTextColor(p.text); setHintTextColor(p.muted); minLines = 3; gravity = Gravity.TOP }
         listOf(name, handle, bio, persona).forEach { field -> chatColumn.addView(field, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) }) }
