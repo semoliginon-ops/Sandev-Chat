@@ -13,6 +13,7 @@ import android.provider.OpenableColumns
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
@@ -80,6 +81,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         loadLocalState()
         buildUi()
         renderMessages()
@@ -103,11 +105,14 @@ class MainActivity : AppCompatActivity() {
                     if (pending != null && pending.exists()) {
                         pendingModelFile = null
                         loadModelFile(pending, true)
-                    } else {
+                    } else if (prefs().getBoolean(KEY_AUTO_LOAD_MODEL, true)) {
                         activeModelName?.let { name ->
                             val model = modelFile(name)
                             if (model.exists()) loadModelFile(model, false)
+                            else status.text = "Model terakhir tidak ditemukan. Pilih model."
                         }
+                    } else {
+                        status.text = "Engine siap. Pilih model untuk mulai."
                     }
                 }
             } catch (e: Exception) {
@@ -230,15 +235,37 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val models = modelFiles()
-        val options = arrayOf("Impor model GGUF", "Pilih model tersimpan", "Hapus model")
-        AlertDialog.Builder(this).setTitle("Model Q4_K_M GGUF")
+        val options = arrayOf(
+            "＋  Impor model GGUF",
+            "▤  Model tersimpan (${models.size})",
+            "−  Hapus model",
+            "⚙  Pengaturan model otomatis"
+        )
+        AlertDialog.Builder(this).setTitle("AI Model · Q4_K_M")
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> modelPicker.launch(arrayOf("*/*"))
-                    1 -> showSavedModels(models, false)
-                    2 -> showSavedModels(models, true)
+                    1 -> showSavedModels(modelFiles(), false)
+                    2 -> showSavedModels(modelFiles(), true)
+                    3 -> showModelSettings()
                 }
             }.show()
+    }
+
+    private fun showModelSettings() {
+        val autoLoad = booleanArrayOf(prefs().getBoolean(KEY_AUTO_LOAD_MODEL, true))
+        AlertDialog.Builder(this)
+            .setTitle("Pengaturan model")
+            .setMultiChoiceItems(
+                arrayOf("Muat model terakhir otomatis saat aplikasi dibuka"),
+                autoLoad
+            ) { _, _, checked -> autoLoad[0] = checked }
+            .setPositiveButton("Simpan") { _, _ ->
+                prefs().edit().putBoolean(KEY_AUTO_LOAD_MODEL, autoLoad[0]).apply()
+                toast(if (autoLoad[0]) "Muat otomatis diaktifkan." else "Muat otomatis dimatikan.")
+            }
+            .setNegativeButton("Batal", null)
+            .show()
     }
 
     private fun showSavedModels(models: List<File>, deleting: Boolean) {
@@ -247,8 +274,10 @@ class MainActivity : AppCompatActivity() {
             return
         }
         AlertDialog.Builder(this)
-            .setTitle(if (deleting) "Pilih model untuk dihapus" else "Pilih model")
-            .setItems(models.map { "${it.name}  •  ${formatSize(it.length())}" }.toTypedArray()) { _, index ->
+            .setTitle(if (deleting) "Pilih model untuk dihapus" else "Pilih AI model")
+            .setItems(models.map {
+                (if (it.name == activeModelName) "✓  " else "    ") + "${it.name}  •  ${formatSize(it.length())}"
+            }.toTypedArray()) { _, index ->
                 val file = models[index]
                 if (deleting) {
                     AlertDialog.Builder(this).setTitle("Hapus model?")
@@ -417,19 +446,40 @@ class MainActivity : AppCompatActivity() {
     private fun createBot() {
         val form = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(8), dp(20), 0)
+            setPadding(dp(20), dp(8), dp(20), dp(12))
         }
-        val name = EditText(this).apply { hint = "Nama bot" }
+        val name = EditText(this).apply {
+            hint = "Nama bot"
+            textSize = 16f
+            isSingleLine = true
+        }
         val prompt = EditText(this).apply {
-            hint = "Kepribadian / instruksi bot"
-            minLines = 3
+            hint = "Kepribadian / instruksi bot (opsional)"
+            minLines = 4
+            maxLines = 8
             gravity = Gravity.TOP
+            textSize = 15f
         }
-        form.addView(name)
-        form.addView(prompt)
-        AlertDialog.Builder(this).setTitle("Buat bot").setView(form)
+        form.addView(name, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        form.addView(prompt, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(12) })
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(form)
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Buat bot baru")
+            .setMessage("Beri nama dan atur cara bot menjawab.")
+            .setView(scroll)
             .setNegativeButton("Batal", null)
-            .setPositiveButton("Simpan") { _, _ ->
+            .setPositiveButton("Simpan", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val botName = name.text.toString().trim().ifBlank { "Bot ${bots.size + 1}" }
                 val bot = BotProfile(UUID.randomUUID().toString(), botName, prompt.text.toString().trim())
                 bots.add(bot)
@@ -438,11 +488,17 @@ class MainActivity : AppCompatActivity() {
                 prefs().edit().putString(KEY_ACTIVE_BOT, activeBotId).apply()
                 header.text = bot.name
                 applyImages()
+                dialog.dismiss()
                 if (engineReady && activeModelName != null) {
                     val file = modelFile(activeModelName!!)
                     if (file.exists()) loadModelFile(file, false)
+                } else {
+                    status.text = "Bot ${bot.name} siap. Pilih model untuk mulai."
                 }
-            }.show()
+            }
+        }
+        dialog.show()
+        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     }
 
     private fun cycleTheme() {
@@ -738,6 +794,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val KEY_ACTIVE_MODEL = "active_model"
+        private const val KEY_AUTO_LOAD_MODEL = "auto_load_model"
         private const val KEY_ACTIVE_BOT = "active_bot"
         private const val KEY_THEME = "theme"
         private const val KEY_PROFILE = "profile"
