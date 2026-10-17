@@ -50,6 +50,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var profileImage: ImageView
     private lateinit var engine: InferenceEngine
     private var engineReady = false
+    private var modelLoadInProgress = false
     private var generationJob: Job? = null
     private var mediaPlayer: MediaPlayer? = null
     private var currentMusicName: String? = null
@@ -223,6 +224,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showModelMenu() {
+        if (generationJob?.isActive == true || modelLoadInProgress) {
+            toast("Tunggu proses model atau jawaban selesai dulu.")
+            return
+        }
         val models = modelFiles()
         val options = arrayOf("Impor model GGUF", "Pilih model tersimpan", "Hapus model")
         AlertDialog.Builder(this).setTitle("Model Q4_K_M GGUF")
@@ -309,6 +314,11 @@ class MainActivity : AppCompatActivity() {
             sendButton.isEnabled = true
             return
         }
+        if (generationJob?.isActive == true || modelLoadInProgress) {
+            toast("Tunggu proses model atau jawaban selesai dulu.")
+            return
+        }
+        modelLoadInProgress = true
         sendButton.isEnabled = false
         input.isEnabled = false
         status.text = "Memuat ${file.name}..."
@@ -338,6 +348,10 @@ class MainActivity : AppCompatActivity() {
                     input.isEnabled = true
                     sendButton.isEnabled = true
                 }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    modelLoadInProgress = false
+                }
             }
         }
     }
@@ -362,6 +376,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showBotMenu() {
+        if (generationJob?.isActive == true || modelLoadInProgress) {
+            toast("Tunggu proses model atau jawaban selesai dulu.")
+            return
+        }
         val options = arrayOf("Pilih bot", "Buat bot baru")
         AlertDialog.Builder(this).setTitle("Bot")
             .setItems(options) { _, which ->
