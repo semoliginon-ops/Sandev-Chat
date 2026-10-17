@@ -48,6 +48,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var chatColumn: LinearLayout
     private lateinit var input: EditText
     private lateinit var sendButton: Button
+    private lateinit var composer: LinearLayout
+    private lateinit var navRow: LinearLayout
     private lateinit var profileImage: ImageView
     private lateinit var engine: InferenceEngine
     private var engineReady = false
@@ -65,6 +67,11 @@ class MainActivity : AppCompatActivity() {
     private var profilePath: String? = null
     private var backgroundPath: String? = null
     private var currentAssistantView: TextView? = null
+    private var currentPage = "discover"
+    private var userName = "You"
+    private var userHandle = ""
+    private var userBio = ""
+    private var userPersona = ""
 
     private val modelPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importModel(uri)
@@ -75,6 +82,9 @@ class MainActivity : AppCompatActivity() {
     private val backgroundPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importImage(uri, false)
     }
+    private val userImagePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) importUserImage(uri)
+    }
     private val musicPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importMusic(uri)
     }
@@ -84,7 +94,7 @@ class MainActivity : AppCompatActivity() {
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         loadLocalState()
         buildUi()
-        renderMessages()
+        renderPage()
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 engine = AiChat.getInferenceEngine(applicationContext)
@@ -166,11 +176,8 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        addAction(actions, "Model") { showModelMenu() }
-        addAction(actions, "Bot") { showBotMenu() }
-        addAction(actions, "Tema") { cycleTheme() }
-        addAction(actions, "Latar") { backgroundPicker.launch(arrayOf("image/*")) }
-        addAction(actions, "Musik") { showMusicMenu() }
+        addAction(actions, "AI Model") { showModelMenu() }
+        addAction(actions, "Pengaturan") { showSettingsMenu() }
         root.addView(actions)
 
         chatScroll = ScrollView(this).apply {
@@ -188,7 +195,7 @@ class MainActivity : AppCompatActivity() {
         chatScroll.addView(chatColumn)
         root.addView(chatScroll)
 
-        val composer = LinearLayout(this).apply {
+        composer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
@@ -214,6 +221,18 @@ class MainActivity : AppCompatActivity() {
         composer.addView(input)
         composer.addView(sendButton)
         root.addView(composer)
+
+        navRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4), 0, 0)
+        }
+        addNavItem(navRow, "⌂", "Discover") { currentPage = "discover"; renderPage() }
+        addNavItem(navRow, "▤", "Chats") { currentPage = "chats"; renderPage() }
+        addNavItem(navRow, "♫", "Music") { currentPage = "music"; renderPage() }
+        addNavItem(navRow, "＋", "Create") { createBot() }
+        addNavItem(navRow, "◉", "Profile") { currentPage = "profile"; renderPage() }
+        root.addView(navRow)
         setContentView(root)
         applyPalette()
         applyImages()
@@ -227,6 +246,145 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(5), 0, dp(5), 0)
             setOnClickListener { action() }
         }, LinearLayout.LayoutParams(0, dp(44), 1f))
+    }
+
+    private fun addNavItem(row: LinearLayout, symbol: String, label: String, action: () -> Unit) {
+        val item = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(2), dp(4), dp(2), dp(4))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { action() }
+        }
+        item.addView(TextView(this).apply { text = symbol; textSize = 21f; gravity = Gravity.CENTER })
+        item.addView(TextView(this).apply { text = label; textSize = 10f; gravity = Gravity.CENTER })
+        row.addView(item, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+    }
+
+    private fun showSettingsMenu() {
+        val options = arrayOf("AI Model", "Ganti tema", "Foto latar chat", "Profil pengguna")
+        AlertDialog.Builder(this).setTitle("Pengaturan Sandev")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showModelMenu()
+                    1 -> cycleTheme()
+                    2 -> backgroundPicker.launch(arrayOf("image/*"))
+                    3 -> { currentPage = "profile"; renderPage() }
+                }
+            }.show()
+    }
+
+    private fun renderPage() {
+        if (!::chatColumn.isInitialized) return
+        composer.visibility = if (currentPage == "chats") View.VISIBLE else View.GONE
+        chatColumn.removeAllViews()
+        when (currentPage) {
+            "discover" -> renderDiscover()
+            "chats" -> { header.text = activeBot().name; renderMessages() }
+            "music" -> renderMusicPage()
+            "profile" -> renderUserProfile()
+            else -> renderDiscover()
+        }
+        navRow.setBackgroundColor(palettes[themeIndex].background)
+    }
+
+    private fun addSectionTitle(title: String, subtitle: String? = null) {
+        val p = palettes[themeIndex]
+        chatColumn.addView(TextView(this).apply {
+            text = title; textSize = 23f; typeface = Typeface.DEFAULT_BOLD
+            setTextColor(p.text); setPadding(dp(4), dp(8), dp(4), dp(4))
+        })
+        if (!subtitle.isNullOrBlank()) chatColumn.addView(TextView(this).apply {
+            text = subtitle; textSize = 13f; setTextColor(p.muted)
+            setPadding(dp(4), 0, dp(4), dp(12))
+        })
+    }
+
+    private fun renderDiscover() {
+        header.text = "Discover"
+        addSectionTitle("Temukan karakter", "Karakter lokalmu, siap diajak mengobrol kapan saja.")
+        val search = EditText(this).apply {
+            hint = "Cari karakter..."; singleLine = true; textSize = 14f
+            setTextColor(palettes[themeIndex].text); setHintTextColor(palettes[themeIndex].muted)
+            setBackgroundColor(palettes[themeIndex].panel)
+        }
+        chatColumn.addView(search, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(12) })
+        val cards = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        chatColumn.addView(cards)
+        fun populate(filter: String) {
+            cards.removeAllViews()
+            val p = palettes[themeIndex]
+            val visible = bots.filter { filter.isBlank() || it.name.contains(filter, true) || it.tagline.contains(filter, true) || it.description.contains(filter, true) }
+            visible.forEach { bot ->
+                val card = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(12), dp(12), dp(12), dp(12)); setBackgroundColor(p.panel)
+                    isClickable = true; isFocusable = true
+                    setOnClickListener {
+                        activeBotId = bot.id
+                        prefs().edit().putString(KEY_ACTIVE_BOT, activeBotId).apply()
+                        currentPage = "chats"
+                        if (bot.greeting.isNotBlank() && messages.isEmpty()) { messages.add(ChatMessage("assistant", bot.greeting)); saveMessages() }
+                        if (engineReady && activeModelName != null) try { engine.setSystemPrompt(bot.systemPrompt.ifBlank { DEFAULT_SYSTEM_PROMPT }) } catch (_: Exception) {}
+                        renderPage()
+                    }
+                }
+                val avatar = ImageView(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(dp(64), dp(64)); scaleType = ImageView.ScaleType.CENTER_CROP
+                    setBackgroundColor(p.background)
+                    bot.avatarPath?.let { path -> if (File(path).exists()) decodeScaledBitmap(path, 192)?.let { setImageBitmap(it) } }
+                }
+                card.addView(avatar)
+                val textCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, 0, 0); layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
+                textCol.addView(TextView(this).apply { text = bot.name; textSize = 16f; typeface = Typeface.DEFAULT_BOLD; setTextColor(p.text) })
+                textCol.addView(TextView(this).apply { text = bot.tagline.ifBlank { bot.description.ifBlank { "Karakter offline Sandev" } }; textSize = 12f; setTextColor(p.muted); maxLines = 3 })
+                textCol.addView(TextView(this).apply { text = "Mulai chat  ›"; textSize = 12f; setTextColor(p.accent); setPadding(0, dp(6), 0, 0) })
+                card.addView(textCol)
+                cards.addView(card, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(10) })
+            }
+            if (visible.isEmpty()) cards.addView(TextView(this).apply { text = "Karakter tidak ditemukan. Tekan Create untuk membuat karakter baru."; textSize = 14f; setTextColor(p.muted); setPadding(dp(8), dp(20), dp(8), dp(20)) })
+        }
+        search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { populate(s?.toString().orEmpty()) }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
+        populate("")
+    }
+
+    private fun renderMusicPage() {
+        header.text = "Music"
+        addSectionTitle("Musik", "Pilih musik lokal untuk menemani percakapan.")
+        val p = palettes[themeIndex]
+        chatColumn.addView(TextView(this).apply { text = currentMusicName?.let { "Dipilih: $it" } ?: "Belum ada musik dipilih"; textSize = 14f; setTextColor(p.text); setPadding(dp(8), dp(12), dp(8), dp(12)) })
+        addAction(chatColumn, "Pilih file musik") { musicPicker.launch(arrayOf("audio/*")) }
+        addAction(chatColumn, "Putar / jeda") { toggleMusic() }
+        addAction(chatColumn, "Hentikan musik") { stopMusic(); renderPage() }
+    }
+
+    private fun renderUserProfile() {
+        header.text = "Profil pengguna"
+        addSectionTitle("Persona kamu", "Profil disimpan di perangkat dan dapat dipakai saat roleplay.")
+        val p = palettes[themeIndex]
+        val avatar = ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(96), dp(96)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(8) }
+            scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(p.panel)
+            profilePath?.let { path -> if (File(path).exists()) decodeScaledBitmap(path, 256)?.let { setImageBitmap(it) } }
+        }
+        chatColumn.addView(avatar)
+        addAction(chatColumn, "Ganti foto pengguna") { userImagePicker.launch(arrayOf("image/*")) }
+        val name = EditText(this).apply { hint = "Nama tampilan"; setText(userName); setTextColor(p.text); setHintTextColor(p.muted) }
+        val handle = EditText(this).apply { hint = "Username (opsional)"; setText(userHandle); setTextColor(p.text); setHintTextColor(p.muted); singleLine = true }
+        val bio = EditText(this).apply { hint = "Bio singkat"; setText(userBio); setTextColor(p.text); setHintTextColor(p.muted); minLines = 2; gravity = Gravity.TOP }
+        val persona = EditText(this).apply { hint = "Persona / informasi diri untuk roleplay"; setText(userPersona); setTextColor(p.text); setHintTextColor(p.muted); minLines = 3; gravity = Gravity.TOP }
+        listOf(name, handle, bio, persona).forEach { field -> chatColumn.addView(field, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) }) }
+        addAction(chatColumn, "Simpan profil") {
+            userName = name.text.toString().trim().ifBlank { "You" }; userHandle = handle.text.toString().trim()
+            userBio = bio.text.toString().trim(); userPersona = persona.text.toString().trim()
+            prefs().edit().putString(KEY_USER_NAME, userName).putString(KEY_USER_HANDLE, userHandle).putString(KEY_USER_BIO, userBio).putString(KEY_USER_PERSONA, userPersona).apply()
+            toast("Profil pengguna tersimpan.")
+        }
     }
 
     private fun showModelMenu() {
@@ -448,24 +606,20 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(8), dp(20), dp(12))
         }
-        val name = EditText(this).apply {
-            hint = "Nama bot"
-            textSize = 16f
-            isSingleLine = true
+        fun field(hintText: String, lines: Int = 1): EditText = EditText(this).apply {
+            hint = hintText; textSize = 15f; minLines = lines; maxLines = if (lines == 1) 2 else lines + 2
+            gravity = if (lines > 1) Gravity.TOP else Gravity.CENTER_VERTICAL
+            if (lines == 1) isSingleLine = false
         }
-        val prompt = EditText(this).apply {
-            hint = "Kepribadian / instruksi bot (opsional)"
-            minLines = 4
-            maxLines = 8
-            gravity = Gravity.TOP
-            textSize = 15f
+        val name = field("Nama karakter")
+        val tagline = field("Tagline singkat")
+        val description = field("Deskripsi karakter", 3)
+        val greeting = field("Greeting / sapaan awal", 3)
+        val prompt = field("Definisi kepribadian dan latar belakang", 5)
+        val example = field("Contoh dialog (opsional)", 3)
+        listOf(name, tagline, description, greeting, prompt, example).forEach { edit ->
+            form.addView(edit, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(6) })
         }
-        form.addView(name, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-        form.addView(prompt, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(12) })
         val scroll = ScrollView(this).apply {
             isFillViewport = true
             addView(form)
@@ -480,20 +634,30 @@ class MainActivity : AppCompatActivity() {
         dialog.setOnShowListener {
             dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val botName = name.text.toString().trim().ifBlank { "Bot ${bots.size + 1}" }
-                val bot = BotProfile(UUID.randomUUID().toString(), botName, prompt.text.toString().trim())
+                val botName = name.text.toString().trim().ifBlank { "Karakter ${bots.size + 1}" }
+                val botDescription = description.text.toString().trim()
+                val botGreeting = greeting.text.toString().trim()
+                val fullPrompt = buildString {
+                    append(prompt.text.toString().trim())
+                    if (botDescription.isNotBlank()) append("\n\nDeskripsi karakter: ").append(botDescription)
+                    if (example.text.toString().isNotBlank()) append("\n\nContoh dialog:\n").append(example.text.toString().trim())
+                    if (userPersona.isNotBlank()) append("\n\nPersona pengguna: ").append(userPersona)
+                }.trim()
+                val bot = BotProfile(UUID.randomUUID().toString(), botName, fullPrompt, null,
+                    tagline.text.toString().trim(), botDescription, botGreeting, example.text.toString().trim())
                 bots.add(bot)
                 activeBotId = bot.id
                 saveBots()
                 prefs().edit().putString(KEY_ACTIVE_BOT, activeBotId).apply()
-                header.text = bot.name
-                applyImages()
                 dialog.dismiss()
+                currentPage = "discover"
+                renderPage()
+                toast("Karakter ${bot.name} tersimpan.")
                 if (engineReady && activeModelName != null) {
                     val file = modelFile(activeModelName!!)
                     if (file.exists()) loadModelFile(file, false)
                 } else {
-                    status.text = "Bot ${bot.name} siap. Pilih model untuk mulai."
+                    status.text = "Karakter ${bot.name} siap. Pilih model untuk mulai."
                 }
             }
         }
@@ -520,28 +684,27 @@ class MainActivity : AppCompatActivity() {
             chatColumn.setBackgroundColor(Color.TRANSPARENT)
             applyImages()
         }
+        navRow.setBackgroundColor(p.background)
         input.setTextColor(p.text)
         input.setHintTextColor(p.muted)
         input.setBackgroundColor(p.panel)
         profileImage.setBackgroundColor(p.panel)
         sendButton.setTextColor(Color.WHITE)
         sendButton.setBackgroundTintList(android.content.res.ColorStateList.valueOf(p.accent))
-        renderMessages()
+        renderPage()
     }
 
     private fun importImage(uri: Uri, profile: Boolean) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val dir = File(filesDir, "custom").apply { mkdirs() }
-                val target = File(dir, if (profile) "bot-${activeBotId}-profile" else "chat-background")
+                val target = File(dir, if (profile) "bot-${activeBotId}-avatar" else "chat-background")
                 contentResolver.openInputStream(uri).use { source ->
                     requireNotNull(source) { "Gambar tidak bisa dibuka." }
                     FileOutputStream(target).use { sink -> source.copyTo(sink) }
                 }
                 withContext(Dispatchers.Main) {
                     if (profile) {
-                        profilePath = target.absolutePath
-                        prefs().edit().putString(KEY_PROFILE, profilePath).apply()
                         val botIndex = bots.indexOfFirst { it.id == activeBotId }
                         if (botIndex >= 0) {
                             bots[botIndex] = bots[botIndex].copy(avatarPath = target.absolutePath)
@@ -552,10 +715,32 @@ class MainActivity : AppCompatActivity() {
                         prefs().edit().putString(KEY_BACKGROUND, backgroundPath).apply()
                     }
                     applyImages()
-                    toast(if (profile) "Foto profil disimpan." else "Background chat disimpan.")
+                    if (currentPage == "discover") renderPage()
+                    toast(if (profile) "Foto bot disimpan." else "Background chat disimpan.")
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { toast("Gagal menyimpan gambar: ${e.message}") }
+            }
+        }
+    }
+
+    private fun importUserImage(uri: Uri) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val dir = File(filesDir, "custom").apply { mkdirs() }
+                val target = File(dir, "user-profile")
+                contentResolver.openInputStream(uri).use { source ->
+                    requireNotNull(source) { "Gambar tidak bisa dibuka." }
+                    FileOutputStream(target).use { sink -> source.copyTo(sink) }
+                }
+                withContext(Dispatchers.Main) {
+                    profilePath = target.absolutePath
+                    prefs().edit().putString(KEY_PROFILE, profilePath).apply()
+                    toast("Foto pengguna disimpan.")
+                    if (currentPage == "profile") renderPage()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { toast("Gagal menyimpan foto pengguna: ${e.message}") }
             }
         }
     }
@@ -719,6 +904,10 @@ class MainActivity : AppCompatActivity() {
         activeModelName = prefs().getString(KEY_ACTIVE_MODEL, null)
         activeBotId = prefs().getString(KEY_ACTIVE_BOT, "default") ?: "default"
         profilePath = prefs().getString(KEY_PROFILE, null)
+        userName = prefs().getString(KEY_USER_NAME, "You") ?: "You"
+        userHandle = prefs().getString(KEY_USER_HANDLE, "") ?: ""
+        userBio = prefs().getString(KEY_USER_BIO, "") ?: ""
+        userPersona = prefs().getString(KEY_USER_PERSONA, "") ?: ""
         backgroundPath = prefs().getString(KEY_BACKGROUND, null)
         val rawMessages = prefs().getString(KEY_MESSAGES, "[]") ?: "[]"
         try {
@@ -733,7 +922,12 @@ class MainActivity : AppCompatActivity() {
             val array = JSONArray(rawBots)
             for (i in 0 until array.length()) {
                 val item = array.getJSONObject(i)
-                bots.add(BotProfile(item.optString("id"), item.optString("name"), item.optString("prompt"), item.optString("avatar").takeIf { it.isNotBlank() }))
+                bots.add(BotProfile(
+                    item.optString("id"), item.optString("name"), item.optString("prompt"),
+                    item.optString("avatar").takeIf { it.isNotBlank() },
+                    item.optString("tagline"), item.optString("description"),
+                    item.optString("greeting"), item.optString("example")
+                ))
             }
         } catch (_: Exception) {}
         if (bots.none { it.id == "default" }) bots.add(0, BotProfile("default", "Sandev", ""))
@@ -747,7 +941,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveBots() {
         val array = JSONArray()
-        bots.forEach { array.put(JSONObject().put("id", it.id).put("name", it.name).put("prompt", it.systemPrompt).put("avatar", it.avatarPath ?: "")) }
+        bots.forEach { array.put(JSONObject()
+            .put("id", it.id).put("name", it.name).put("prompt", it.systemPrompt)
+            .put("avatar", it.avatarPath ?: "").put("tagline", it.tagline)
+            .put("description", it.description).put("greeting", it.greeting)
+            .put("example", it.exampleDialog)) }
         prefs().edit().putString(KEY_BOTS, array.toString()).apply()
     }
 
@@ -786,7 +984,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private data class ChatMessage(val role: String, var text: String)
-    private data class BotProfile(val id: String, val name: String, val systemPrompt: String, val avatarPath: String? = null)
+    private data class BotProfile(
+        val id: String, val name: String, val systemPrompt: String,
+        val avatarPath: String? = null, val tagline: String = "",
+        val description: String = "", val greeting: String = "", val exampleDialog: String = ""
+    )
     private data class Palette(
         val background: Int, val panel: Int, val text: Int, val muted: Int,
         val accent: Int, val userBubble: Int, val botBubble: Int
@@ -798,6 +1000,10 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_ACTIVE_BOT = "active_bot"
         private const val KEY_THEME = "theme"
         private const val KEY_PROFILE = "profile"
+        private const val KEY_USER_NAME = "user_name"
+        private const val KEY_USER_HANDLE = "user_handle"
+        private const val KEY_USER_BIO = "user_bio"
+        private const val KEY_USER_PERSONA = "user_persona"
         private const val KEY_BACKGROUND = "background"
         private const val KEY_MESSAGES = "messages"
         private const val KEY_BOTS = "bots"
