@@ -138,20 +138,40 @@ export default function App(): React.JSX.Element {
       try {
         const prompt = String(args[0] ?? '');
         const nPredict = Math.max(16, Math.min(512, Number(args[1] ?? 128)));
-        const result = await ctx.current.completion({
+        const params = {
           messages: parsePrompt(prompt),
           n_predict: nPredict,
           temperature: Number(args[2] ?? 0.7),
           top_p: Number(args[3] ?? 0.9),
           penalty_repeat: Number(args[4] ?? 1.1),
           stop: STOP,
-          jinja: true,
-        });
-        reply(id, result.text || 'Model tidak menghasilkan teks.');
-        setStatus('Model siap');
+        };
+        let result;
+        try {
+          // First use the model's native GGUF/Jinja chat template.
+          result = await ctx.current.completion({...params, jinja: true});
+        } catch (templateError: any) {
+          const detail = String(templateError?.message || templateError || '');
+          // Some GGUF templates reference unsupported variables (for example
+          // "Answer") in minja. Retry using llama.cpp's non-Jinja chat formatter.
+          if (!/answer is not defined|jinja|template/i.test(detail)) throw templateError;
+          setStatus('Template model tidak cocok — mencoba format alternatif…');
+          result = await ctx.current.completion({...params, jinja: false});
+        }
+        const answer = String(result.text || '').trim();
+        if (!answer) {
+          reply(id, 'Model selesai memproses tetapi tidak menghasilkan teks. Coba pesan lebih pendek atau model GGUF lain.');
+          setStatus('Model siap — jawaban kosong');
+        } else {
+          reply(id, answer);
+          setStatus('Model siap');
+        }
       } catch (e: any) {
-        reply(id, e?.message || 'Inferensi gagal.', true);
-        setStatus('Inferensi gagal');
+        const detail = String(e?.message || e || 'Inferensi gagal.');
+        // Resolve with a visible diagnostic instead of rejecting the WebView
+        // promise, which otherwise leaves the legacy send spinner running.
+        reply(id, 'Gagal menghasilkan jawaban: ' + detail, false);
+        setStatus('Inferensi gagal: ' + detail.slice(0, 90));
       } finally { busy.current = false; }
       return;
     }
