@@ -34,16 +34,25 @@ function parsePrompt(prompt: string): {role: 'system'|'user'|'assistant'; conten
   ];
   if (!first) return messages;
   let current: RegExpExecArray | null = first;
+  const history: {role: 'user'|'assistant'; content: string}[] = [];
   while (current) {
     const bodyStart = current.index + current[0].length;
     const next = marker.exec(rest);
-    messages.push({
-      role: current[1] === 'USER' ? 'user' : 'assistant',
-      content: rest.slice(bodyStart, next ? next.index : rest.length).trim(),
-    });
+    const role = current[1] === 'USER' ? 'user' : 'assistant';
+    const text = rest.slice(bodyStart, next ? next.index : rest.length).trim();
+    // Legacy history may contain consecutive messages with the same role after
+    // a failed generation. Merge them before applying strict GGUF Jinja templates.
+    const previous = history[history.length - 1];
+    if (previous && previous.role === role) {
+      if (text) previous.content = previous.content ? previous.content + '\n' + text : text;
+    } else {
+      history.push({role, content: text});
+    }
     current = next;
   }
-  return messages;
+  // Templates expect history to start with a user turn after the system prompt.
+  while (history.length && history[0].role !== 'user') history.shift();
+  return messages.concat(history);
 }
 
 export default function App(): React.JSX.Element {
