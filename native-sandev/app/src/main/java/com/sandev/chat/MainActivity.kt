@@ -201,15 +201,24 @@ class MainActivity : AppCompatActivity() {
         }
         input = EditText(this).apply {
             hint = "Tulis pesan..."
-            textSize = 15f
+            textSize = 16f
             isSingleLine = false
             minLines = 1
             maxLines = 4
             imeOptions = EditorInfo.IME_ACTION_SEND
             setTextColor(palette.text)
             setHintTextColor(palette.muted)
-            setBackgroundColor(palette.panel)
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            minHeight = dp(48)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = dp(14).toFloat()
+                setColor(palette.panel)
+                setStroke(dp(1), palette.muted)
+            }
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = dp(8)
+            }
         }
         sendButton = Button(this).apply {
             text = "Kirim"
@@ -255,17 +264,50 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun addNavItem(row: LinearLayout, symbol: String, label: String, action: () -> Unit) {
+        val p = palettes[themeIndex]
         val item = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(2), dp(4), dp(2), dp(4))
+            setPadding(dp(2), dp(5), dp(2), dp(5))
+            minimumHeight = dp(48)
             isClickable = true
             isFocusable = true
+            contentDescription = label
             setOnClickListener { action() }
         }
-        item.addView(TextView(this).apply { text = symbol; textSize = 21f; gravity = Gravity.CENTER })
-        item.addView(TextView(this).apply { text = label; textSize = 10f; gravity = Gravity.CENTER })
-        row.addView(item, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        item.addView(TextView(this).apply {
+            text = symbol
+            textSize = 22f
+            gravity = Gravity.CENTER
+            setTextColor(p.muted)
+        })
+        item.addView(TextView(this).apply {
+            text = label
+            textSize = 11f
+            gravity = Gravity.CENTER
+            setTextColor(p.text)
+            typeface = Typeface.DEFAULT_BOLD
+        })
+        row.addView(item, LinearLayout.LayoutParams(0, dp(54), 1f))
+    }
+
+    private fun updateNavigationColors() {
+        if (!::navRow.isInitialized) return
+        val p = palettes[themeIndex]
+        for (index in 0 until navRow.childCount) {
+            val item = navRow.getChildAt(index) as? LinearLayout ?: continue
+            val label = (item.getChildAt(1) as? TextView)?.text?.toString().orEmpty()
+            val selected = when (label) {
+                "Discover" -> currentPage == "discover"
+                "Chats" -> currentPage == "chats"
+                "Music" -> currentPage == "music"
+                "Profile" -> currentPage == "profile"
+                else -> false
+            }
+            (item.getChildAt(0) as? TextView)?.setTextColor(if (selected) p.accent else p.muted)
+            (item.getChildAt(1) as? TextView)?.setTextColor(if (selected) p.accent else p.text)
+            item.setBackgroundColor(if (selected) p.panel else Color.TRANSPARENT)
+        }
     }
 
     private fun showSettingsMenu() {
@@ -293,6 +335,7 @@ class MainActivity : AppCompatActivity() {
             else -> renderDiscover()
         }
         navRow.setBackgroundColor(palettes[themeIndex].background)
+        updateNavigationColors()
     }
 
     private fun addSectionTitle(title: String, subtitle: String? = null) {
@@ -693,7 +736,12 @@ class MainActivity : AppCompatActivity() {
         navRow.setBackgroundColor(p.background)
         input.setTextColor(p.text)
         input.setHintTextColor(p.muted)
-        input.setBackgroundColor(p.panel)
+        input.background = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dp(14).toFloat()
+            setColor(p.panel)
+            setStroke(dp(1), p.muted)
+        }
         profileImage.setBackgroundColor(p.panel)
         sendButton.setTextColor(Color.WHITE)
         sendButton.setBackgroundTintList(android.content.res.ColorStateList.valueOf(p.accent))
