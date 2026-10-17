@@ -443,8 +443,10 @@ class MainActivity : AppCompatActivity() {
                     isClickable = true
                     isFocusable = true
                     setOnClickListener {
+                        saveMessages()
                         activeBotId = bot.id
                         prefs().edit().putString(KEY_ACTIVE_BOT, activeBotId).apply()
+                        loadMessagesForBot(activeBotId)
                         currentPage = "conversation"
                         if (bot.greeting.isNotBlank() && messages.isEmpty()) {
                             messages.add(ChatMessage("assistant", bot.greeting))
@@ -879,11 +881,13 @@ class MainActivity : AppCompatActivity() {
             }.trim()
             val bot = BotProfile(UUID.randomUUID().toString(), botName, fullPrompt, null,
                 tagline.text.toString().trim(), botDescription, botGreeting, exampleText)
+            saveMessages()
             bots.add(bot)
-            activeBotId = bot.id
             saveBots()
+            activeBotId = bot.id
             prefs().edit().putString(KEY_ACTIVE_BOT, activeBotId).apply()
-            if (messages.isEmpty() && botGreeting.isNotBlank()) {
+            loadMessagesForBot(activeBotId)
+            if (botGreeting.isNotBlank()) {
                 messages.add(ChatMessage("assistant", botGreeting))
                 saveMessages()
             }
@@ -1119,50 +1123,81 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderChatHistory() {
         header.text = "Chats"
-        addSectionTitle("Percakapan", "Lanjutkan obrolan terakhir atau pilih karakter lain dari Discover.")
+        addSectionTitle("Riwayat percakapan", "Semua obrolan tersimpan di perangkat ini.")
         val p = palettes[themeIndex]
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), dp(14), dp(14), dp(14))
-            background = panelBackground(p.panel, p.accent, 18)
+        val historyBots = bots.filter { readMessagesForBot(it.id).isNotEmpty() }
+            .sortedByDescending { it.id == activeBotId }
+        if (historyBots.isEmpty()) {
+            val empty = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(20), dp(28), dp(20), dp(28))
+                background = panelBackground(p.panel, Color.rgb(53, 66, 88), 18)
+            }
+            empty.addView(TextView(this).apply {
+                text = "▤"; textSize = 30f; gravity = Gravity.CENTER; setTextColor(p.accent)
+            })
+            empty.addView(TextView(this).apply {
+                text = "Belum ada percakapan"; textSize = 17f
+                typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER
+                setTextColor(p.text); setPadding(0, dp(8), 0, dp(4))
+            })
+            empty.addView(TextView(this).apply {
+                text = "Pilih karakter di Discover untuk memulai obrolan pertamamu."
+                textSize = 13f; gravity = Gravity.CENTER; setTextColor(p.muted)
+            })
+            chatColumn.addView(empty, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(12) })
+        } else {
+            historyBots.forEach { bot ->
+                val history = readMessagesForBot(bot.id)
+                val card = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(12), dp(12), dp(12), dp(12))
+                    background = panelBackground(p.panel, if (bot.id == activeBotId) p.accent else Color.rgb(53, 66, 88), 18)
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener {
+                        saveMessages()
+                        activeBotId = bot.id
+                        prefs().edit().putString(KEY_ACTIVE_BOT, activeBotId).apply()
+                        loadMessagesForBot(activeBotId)
+                        if (engineReady && activeModelName != null) lifecycleScope.launch {
+                            try { engine.setSystemPrompt(bot.systemPrompt.ifBlank { DEFAULT_SYSTEM_PROMPT }) } catch (_: Exception) {}
+                        }
+                        currentPage = "conversation"
+                        renderPage()
+                    }
+                }
+                val avatar = ImageView(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(dp(60), dp(60))
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    background = panelBackground(p.background, p.muted, 14)
+                    bot.avatarPath?.let { path -> if (File(path).exists()) decodeScaledBitmap(path, 192)?.let { setImageBitmap(it) } }
+                }
+                card.addView(avatar)
+                val details = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(12), 0, 0, 0)
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                }
+                details.addView(TextView(this).apply {
+                    text = bot.name; textSize = 16f
+                    typeface = Typeface.DEFAULT_BOLD; setTextColor(p.text)
+                })
+                details.addView(TextView(this).apply {
+                    text = history.lastOrNull()?.text?.takeIf { it.isNotBlank() } ?: "Percakapan dimulai"
+                    textSize = 12f; setTextColor(p.muted); maxLines = 2
+                    setPadding(0, dp(4), 0, dp(6))
+                })
+                details.addView(TextView(this).apply {
+                    text = "BUKA CHAT  ›"; textSize = 11f
+                    typeface = Typeface.DEFAULT_BOLD; setTextColor(p.accent)
+                })
+                card.addView(details)
+                chatColumn.addView(card, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(10) })
+            }
         }
-        val avatar = ImageView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(60), dp(60))
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            background = panelBackground(p.background, p.muted, 14)
-            activeBot().avatarPath?.let { path -> if (File(path).exists()) decodeScaledBitmap(path, 192)?.let { setImageBitmap(it) } }
-        }
-        card.addView(avatar)
-        val details = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), 0, 0, 0)
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        details.addView(TextView(this).apply {
-            text = activeBot().name
-            textSize = 16f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(p.text)
-        })
-        details.addView(TextView(this).apply {
-            text = messages.lastOrNull()?.text?.takeIf { it.isNotBlank() } ?: "Belum ada pesan — mulai percakapanmu."
-            textSize = 12f
-            setTextColor(p.muted)
-            maxLines = 2
-            setPadding(0, dp(4), 0, dp(6))
-        })
-        details.addView(TextView(this).apply {
-            text = "LANJUTKAN  ›"
-            textSize = 11f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(p.accent)
-            setOnClickListener { currentPage = "conversation"; renderPage() }
-        })
-        card.addView(details)
-        card.isClickable = true
-        card.setOnClickListener { currentPage = "conversation"; renderPage() }
-        chatColumn.addView(card, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(12) })
         addAction(chatColumn, "Temukan karakter lain") { currentPage = "discover"; renderPage() }
     }
 
@@ -1261,12 +1296,41 @@ class MainActivity : AppCompatActivity() {
             }
         } catch (_: Exception) {}
         if (bots.none { it.id == "default" }) bots.add(0, BotProfile("default", "Sandev", ""))
+        val perBotKey = KEY_MESSAGES_PREFIX + activeBotId
+        if (prefs().contains(perBotKey)) {
+            loadMessagesForBot(activeBotId)
+        } else {
+            // Migrate the older single-history format into the currently selected character.
+            saveMessages()
+        }
     }
 
     private fun saveMessages() {
         val array = JSONArray()
         messages.forEach { array.put(JSONObject().put("role", it.role).put("text", it.text)) }
-        prefs().edit().putString(KEY_MESSAGES, array.toString()).apply()
+        val serialized = array.toString()
+        prefs().edit()
+            .putString(KEY_MESSAGES, serialized)
+            .putString(KEY_MESSAGES_PREFIX + activeBotId, serialized)
+            .apply()
+    }
+
+    private fun readMessagesForBot(botId: String): List<ChatMessage> {
+        val raw = prefs().getString(KEY_MESSAGES_PREFIX + botId, "[]") ?: "[]"
+        val result = mutableListOf<ChatMessage>()
+        try {
+            val array = JSONArray(raw)
+            for (i in 0 until array.length()) {
+                val item = array.getJSONObject(i)
+                result.add(ChatMessage(item.optString("role"), item.optString("text")))
+            }
+        } catch (_: Exception) {}
+        return result
+    }
+
+    private fun loadMessagesForBot(botId: String) {
+        messages.clear()
+        messages.addAll(readMessagesForBot(botId))
     }
 
     private fun saveBots() {
@@ -1336,6 +1400,7 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_USER_PERSONA = "user_persona"
         private const val KEY_BACKGROUND = "background"
         private const val KEY_MESSAGES = "messages"
+        private const val KEY_MESSAGES_PREFIX = "messages_bot_"
         private const val KEY_BOTS = "bots"
         private const val DEFAULT_SYSTEM_PROMPT =
             "You are Sandev, a helpful AI assistant. Answer clearly in the user's language."
