@@ -239,7 +239,7 @@ class MainActivity : AppCompatActivity() {
         addNavItem(navRow, "⌂", "Discover") { currentPage = "discover"; renderPage() }
         addNavItem(navRow, "▤", "Chats") { currentPage = "chats"; renderPage() }
         addNavItem(navRow, "♫", "Music") { currentPage = "music"; renderPage() }
-        addNavItem(navRow, "＋", "Create") { createBot() }
+        addNavItem(navRow, "＋", "Create Bot") { createBot() }
         addNavItem(navRow, "◉", "Profile") { currentPage = "profile"; renderPage() }
         root.addView(navRow)
         setContentView(root)
@@ -325,7 +325,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderPage() {
         if (!::chatColumn.isInitialized) return
-        composer.visibility = if (currentPage == "chats") View.VISIBLE else View.GONE
+        val inConversation = currentPage == "chats"
+        // Keep the conversation composer directly above the Android IME.
+        // The main navigation must not occupy the bottom edge while typing.
+        composer.visibility = if (inConversation) View.VISIBLE else View.GONE
+        navRow.visibility = if (inConversation) View.GONE else View.VISIBLE
         chatColumn.removeAllViews()
         when (currentPage) {
             "discover" -> renderDiscover()
