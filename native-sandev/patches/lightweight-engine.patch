@@ -1,7 +1,7 @@
 diff --git a/examples/llama.android/lib/src/main/cpp/ai_chat.cpp b/examples/llama.android/lib/src/main/cpp/ai_chat.cpp
 --- a/examples/llama.android/lib/src/main/cpp/ai_chat.cpp
 +++ b/examples/llama.android/lib/src/main/cpp/ai_chat.cpp
-@@ -29,7 +29,7 @@
+@@ -29,6 +29,6 @@
  constexpr int   N_THREADS_HEADROOM      = 2;
  
 -constexpr int   DEFAULT_CONTEXT_SIZE    = 8192;
@@ -13,7 +13,7 @@ diff --git a/examples/llama.android/lib/src/main/cpp/ai_chat.cpp b/examples/llam
 diff --git a/examples/llama.android/lib/build.gradle.kts b/examples/llama.android/lib/build.gradle.kts
 --- a/examples/llama.android/lib/build.gradle.kts
 +++ b/examples/llama.android/lib/build.gradle.kts
-@@ -18,7 +18,7 @@
+@@ -18,4 +18,4 @@
          ndk {
 -             abiFilters += listOf("arm64-v8a", "x86_64")
 +             abiFilters += listOf("arm64-v8a")
