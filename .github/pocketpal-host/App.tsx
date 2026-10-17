@@ -24,10 +24,10 @@ const BRIDGE = `(function(){
 })(); true;`;
 
 function parsePrompt(prompt: string): {role: 'system'|'user'|'assistant'; content: string}[] {
-  const sys = '[[SANDEV_SYSTEM]]\\n';
+  const sys = '[[SANDEV_SYSTEM]]\n';
   if (!prompt.startsWith(sys)) return [{role: 'user', content: prompt}];
   const rest = prompt.slice(sys.length);
-  const marker = /\\n\\[\\[SANDEV_HISTORY_(USER|ASSISTANT)\\]\\]\\n/g;
+  const marker = /\n\[\[SANDEV_HISTORY_(USER|ASSISTANT)\]\]\n/g;
   const first = marker.exec(rest);
   const messages: {role: 'system'|'user'|'assistant'; content: string}[] = [
     {role: 'system', content: first ? rest.slice(0, first.index) : rest},
