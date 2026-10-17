@@ -1,7 +1,7 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {ActivityIndicator, Alert, BackHandler, SafeAreaView, StatusBar, Text, View} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {pick, types} from '@react-native-documents/picker';
+import {keepLocalCopy, pick, types} from '@react-native-documents/picker';
 import RNFS from 'react-native-fs';
 import {WebView, WebViewMessageEvent} from 'react-native-webview';
 import {initLlama, LlamaContext} from '@pocketpalai/llama.rn';
@@ -64,18 +64,32 @@ export default function App(): React.JSX.Element {
       const pickedFiles = await pick({type: [types.allFiles], mode: 'import'});
       const picked = pickedFiles[0];
       if (!picked) return;
-      const uri = picked.uri;
-      const path = decodeURIComponent(uri.replace(/^file:\/\//, ''));
-      if (!path.toLowerCase().endsWith('.gguf')) {
-        Alert.alert('Model tidak valid', 'Pilih file model berformat .gguf.');
+      const fileName = picked.name || '';
+      // Android's Storage Access Framework returns content:// URIs, which
+      // usually do not end in the picked filename. Validate the display name,
+      // then make a real app-local copy before passing the path to llama.cpp.
+      if (!fileName.toLowerCase().endsWith('.gguf')) {
+        Alert.alert('Model tidak valid', 'File yang dipilih bukan berformat .gguf.');
         return;
       }
-      setStatus('Memuat model…');
+      setStatus('Menyalin model ke penyimpanan aplikasi…');
+      const safeName = fileName.replace(/[\\/:*?"<>|]/g, '_');
+      const copies = await keepLocalCopy({
+        files: [{uri: picked.uri, fileName: safeName}],
+        destination: 'documentDirectory',
+      });
+      const copy = copies[0];
+      if (!copy || copy.status !== 'success') {
+        throw new Error(copy && copy.status === 'error' ? copy.copyError : 'Tidak bisa menyalin file model ke penyimpanan aplikasi.');
+      }
+      const path = decodeURIComponent(copy.localUri.replace(/^file:\/\//, ''));
+      setStatus('Memuat model AI…');
       await ctx.current?.release();
       ctx.current = null;
+      // llama.rn expects an app-local filesystem path, not a content:// URI.
       // CPU is the safe fallback. Do not force GPU/NPU on unsupported devices.
       ctx.current = await initLlama({
-        model: 'file://' + path,
+        model: path,
         n_ctx: 2048,
         n_batch: 256,
         n_threads: 4,
