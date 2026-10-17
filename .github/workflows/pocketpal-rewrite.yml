@@ -39,11 +39,26 @@ jobs:
       - name: Sign installable test APK
         working-directory: .migration-work/SandevChat/android
         run: |
-          KEYSTORE="$RUNNER_TEMP/sandev-debug.keystore"
-          keytool -genkeypair -v -keystore "$KEYSTORE" -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
+          APK_DIR="app/build/outputs/apk/release"
+          OUTPUT="$APK_DIR/sandev-chat-pocketpal.apk"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)"
-          "$APKSIGNER" sign --ks "$KEYSTORE" --ks-pass pass:android --key-pass pass:android --out app/build/outputs/apk/release/sandev-chat-pocketpal.apk app/build/outputs/apk/release/app-release-unsigned.apk
-          "$APKSIGNER" verify app/build/outputs/apk/release/sandev-chat-pocketpal.apk
+          UNSIGNED="$APK_DIR/app-release-unsigned.apk"
+          SIGNED="$APK_DIR/app-release.apk"
+
+          if [ -f "$UNSIGNED" ]; then
+            KEYSTORE="$RUNNER_TEMP/sandev-debug.keystore"
+            keytool -genkeypair -v -keystore "$KEYSTORE" -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
+            "$APKSIGNER" sign --ks "$KEYSTORE" --ks-pass pass:android --key-pass pass:android --out "$OUTPUT" "$UNSIGNED"
+          elif [ -f "$SIGNED" ]; then
+            cp "$SIGNED" "$OUTPUT"
+          else
+            echo "No release APK found in $APK_DIR"
+            find app/build/outputs/apk -type f -name '*.apk' -print
+            exit 1
+          fi
+
+          "$APKSIGNER" verify "$OUTPUT"
+          ls -lh "$OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
           name: sandev-chat-pocketpal-rewrite
