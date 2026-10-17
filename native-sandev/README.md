@@ -25,17 +25,18 @@ This clones the pinned upstream source into `third_party/llama.cpp`. Gradle then
 
 Do not build an APK automatically as part of source preparation. Build only after Joni explicitly approves a build. The existing PocketPal workflow is left untouched and this directory is not among its watched paths.
 
-## Feature checklist
+## Source implementation checklist (not yet build/device-verified)
 
 - [x] Native chat screen and streaming answer display
-- [x] Import multiple GGUF files into app-private storage
-- [x] Remember active model and auto-load it after restart
+- [x] Import multiple Q4_K_M GGUF files into app-private storage
+- [x] Remember active model and attempt auto-load after restart
 - [x] Select and delete stored models with confirmation
 - [x] Save chat history locally
 - [x] Create/select simple bots with a system prompt
-- [x] Choose a bot/profile picture
-- [x] Choose a chat background image
+- [x] Choose a separate profile picture for each bot
+- [x] Choose a chat background image, downsampled for lower memory use
 - [x] Change and persist accent themes
 - [x] Choose and play/pause a local music file
+- [x] Limit generation to 256 tokens by default and native context/batch to 2048/128
 
-This is source preparation only. No APK has been built or device-tested yet.
+These are source-level implementations only. No APK has been built, compiled, or device-tested yet. Model compatibility and response generation must be verified in the first approved test build.
