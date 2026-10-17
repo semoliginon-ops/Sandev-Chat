@@ -533,6 +533,17 @@ class MainActivity : AppCompatActivity() {
                     setPadding(0, dp(8), 0, 0)
                 })
                 card.addView(textCol)
+                if (bot.id != "default") {
+                    val deleteBotButton = Button(this).apply {
+                        text = "⋮"
+                        textSize = 18f
+                        minWidth = 0
+                        setPadding(dp(6), 0, dp(6), 0)
+                        contentDescription = "Hapus bot ${bot.name}"
+                        setOnClickListener { showDeleteBotConfirmation(bot) }
+                    }
+                    card.addView(deleteBotButton, LinearLayout.LayoutParams(dp(42), dp(48)))
+                }
                 cards.addView(card, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(10) })
             }
             if (visible.isEmpty()) cards.addView(TextView(this).apply {
@@ -1614,13 +1625,57 @@ class MainActivity : AppCompatActivity() {
             )
         )
         var changed = false
+        val deletedSamples = prefs().getStringSet(KEY_DELETED_SAMPLE_BOTS, emptySet()) ?: emptySet()
         samples.forEach { sample ->
-            if (bots.none { it.id == sample.id }) {
+            if (sample.id !in deletedSamples && bots.none { it.id == sample.id }) {
                 bots.add(sample)
                 changed = true
             }
         }
         if (changed) saveBots()
+    }
+
+    private fun showDeleteBotConfirmation(bot: BotProfile) {
+        if (bot.id == "default") {
+            toast("Bot bawaan utama tidak bisa dihapus.")
+            return
+        }
+        if (generationJob?.isActive == true || modelLoadInProgress || modelImportInProgress) {
+            toast("Tunggu proses model atau jawaban selesai dulu.")
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Hapus bot ${bot.name}?")
+            .setMessage("Karakter, sapaan, dan riwayat chat bot ini akan dihapus dari aplikasi. Tindakan ini tidak bisa dibatalkan.")
+            .setNegativeButton("Batal", null)
+            .setPositiveButton("Hapus bot") { _, _ ->
+                val wasActive = bot.id == activeBotId
+                bots.removeAll { it.id == bot.id }
+                if (bot.id.startsWith("sample_")) {
+                    val deleted = (prefs().getStringSet(KEY_DELETED_SAMPLE_BOTS, emptySet()) ?: emptySet()).toMutableSet()
+                    deleted.add(bot.id)
+                    prefs().edit().putStringSet(KEY_DELETED_SAMPLE_BOTS, deleted).apply()
+                }
+                prefs().edit().remove(KEY_MESSAGES_PREFIX + bot.id).apply()
+                saveBots()
+                if (wasActive) {
+                    val fallback = bots.firstOrNull { it.id == "default" } ?: bots.first()
+                    activeBotId = fallback.id
+                    messages.clear()
+                    prefs().edit()
+                        .putString(KEY_ACTIVE_BOT, fallback.id)
+                        .putString(KEY_MESSAGES, "[]")
+                        .apply()
+                    if (currentPage == "conversation") currentPage = "discover"
+                    activeModelName?.let { name ->
+                        val file = modelFile(name)
+                        if (file.exists()) loadModelFile(file, false)
+                    }
+                }
+                renderPage()
+                toast("Bot ${bot.name} dihapus.")
+            }
+            .show()
     }
 
     private fun saveBots() {
@@ -1734,6 +1789,7 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_MESSAGES = "messages"
         private const val KEY_MESSAGES_PREFIX = "messages_bot_"
         private const val KEY_BOTS = "bots"
+        private const val KEY_DELETED_SAMPLE_BOTS = "deleted_sample_bots"
         private const val DEFAULT_SYSTEM_PROMPT =
             "You are Sandev, a helpful AI assistant. Answer clearly in the user's language."
         private val palettes = listOf(
