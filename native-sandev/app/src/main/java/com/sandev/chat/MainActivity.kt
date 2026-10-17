@@ -940,7 +940,7 @@ class MainActivity : AppCompatActivity() {
             }
             currentPage = "conversation"
             if (engineReady && activeModelName != null) lifecycleScope.launch {
-                try { engine.setSystemPrompt(bot.systemPrompt.ifBlank { DEFAULT_SYSTEM_PROMPT }) } catch (_: Exception) {}
+                try { engine.setSystemPrompt(buildCharacterSystemPrompt(bot)) } catch (_: Exception) {}
             }
             renderPage()
             toast("Karakter $botName tersimpan. Ketuk avatar di header untuk mengganti fotonya.")
@@ -1213,7 +1213,7 @@ class MainActivity : AppCompatActivity() {
                         prefs().edit().putString(KEY_ACTIVE_BOT, activeBotId).apply()
                         loadMessagesForBot(activeBotId)
                         if (engineReady && activeModelName != null) lifecycleScope.launch {
-                            try { engine.setSystemPrompt(bot.systemPrompt.ifBlank { DEFAULT_SYSTEM_PROMPT }) } catch (_: Exception) {}
+                            try { engine.setSystemPrompt(buildCharacterSystemPrompt(bot)) } catch (_: Exception) {}
                         }
                         currentPage = "conversation"
                         renderPage()
@@ -1405,7 +1405,7 @@ class MainActivity : AppCompatActivity() {
         appendLine(bot.systemPrompt.ifBlank { DEFAULT_SYSTEM_PROMPT })
         if (bot.greeting.isNotBlank()) {
             appendLine()
-            appendLine("SAPaan PEMBUKA KARAKTER (sudah ditampilkan sebagai pesan awal; jangan mengulanginya tanpa alasan):")
+            appendLine("SAPAAN PEMBUKA KARAKTER (sudah ditampilkan sebagai pesan awal; jangan mengulanginya tanpa alasan):")
             appendLine(bot.greeting)
         }
         if (bot.exampleDialog.isNotBlank()) {
