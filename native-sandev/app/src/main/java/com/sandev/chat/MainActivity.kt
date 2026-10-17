@@ -74,6 +74,12 @@ class MainActivity : AppCompatActivity() {
     private var backgroundPath: String? = null
     private var currentAssistantView: TextView? = null
     private var currentPage = "discover"
+    private var blackjackChips = 100
+    private var blackjackDeck = mutableListOf<BlackjackCard>()
+    private var blackjackPlayerHand = mutableListOf<BlackjackCard>()
+    private var blackjackDealerHand = mutableListOf<BlackjackCard>()
+    private var blackjackRoundActive = false
+    private var blackjackMessage = "Tekan Mulai untuk bermain."
     private var editingBotId: String? = null
     private var conversationReturnPage = "discover"
     private var userName = "You"
@@ -379,6 +385,7 @@ class MainActivity : AppCompatActivity() {
             "chats" -> renderChatHistory()
             "conversation" -> { header.text = activeBot().name; renderMessages() }
             "music" -> renderMusicPage()
+            "blackjack" -> renderBlackjackPage()
             "create_bot" -> renderCreateBotPage()
             "profile" -> renderUserProfile()
             else -> renderDiscover()
@@ -439,6 +446,31 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { currentPage = "create_bot"; renderPage() }
         })
         chatColumn.addView(feature, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(16) })
+
+        val gameCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            background = panelBackground(p.panel, Color.rgb(48, 145, 104), 18)
+        }
+        gameCard.addView(TextView(this).apply {
+            text = "♠  BLACKJACK"; textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.rgb(68, 205, 145))
+        })
+        gameCard.addView(TextView(this).apply {
+            text = "Main kartu bareng Sandev"; textSize = 18f
+            typeface = Typeface.DEFAULT_BOLD; setTextColor(p.text)
+            setPadding(0, dp(5), 0, dp(4))
+        })
+        gameCard.addView(TextView(this).apply {
+            text = "Game kartu offline • chip virtual • tanpa internet"
+            textSize = 12f; setTextColor(p.muted)
+        })
+        addAction(gameCard, "Main Blackjack") {
+            currentPage = "blackjack"
+            if (!blackjackRoundActive && blackjackPlayerHand.isEmpty()) blackjackMessage = "Tekan Mulai untuk bermain."
+            renderPage()
+        }
+        chatColumn.addView(gameCard, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(16) })
 
         val search = EditText(this).apply {
             hint = "⌕  Cari nama atau deskripsi karakter..."
@@ -596,6 +628,177 @@ class MainActivity : AppCompatActivity() {
         })
         buildCategoryChips()
         populate("")
+    }
+
+    private fun renderBlackjackPage() {
+        header.text = "Blackjack"
+        val p = palettes[themeIndex]
+        addSectionTitle("Blackjack", "Kumpulkan kartu mendekati 21 tanpa melewatinya.")
+        val table = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(14), dp(16), dp(14), dp(16))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = dp(22).toFloat()
+                setColor(Color.rgb(13, 93, 65))
+                setStroke(dp(1), Color.rgb(49, 164, 113))
+            }
+        }
+        table.addView(TextView(this).apply {
+            text = "SANDEV • DEALER"; textSize = 12f; letterSpacing = 0.08f
+            typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.rgb(190, 239, 213))
+        })
+        table.addView(TextView(this).apply {
+            text = if (blackjackDealerHand.isEmpty()) "Kartu dealer akan muncul di sini" else "Kartu dealer"
+            textSize = 14f; setTextColor(Color.WHITE); setPadding(0, dp(6), 0, dp(8))
+        })
+        table.addView(buildCardRow(blackjackDealerHand, hideSecond = blackjackRoundActive))
+        val dealerScore = if (blackjackRoundActive && blackjackDealerHand.isNotEmpty()) {
+            "Nilai terlihat: " + blackjackDealerHand.first().rankValue()
+        } else if (blackjackDealerHand.isNotEmpty()) {
+            "Nilai dealer: " + handValue(blackjackDealerHand)
+        } else ""
+        table.addView(TextView(this).apply {
+            text = dealerScore; textSize = 12f; setTextColor(Color.rgb(220, 247, 232))
+            setPadding(0, dp(5), 0, dp(18))
+        })
+        table.addView(TextView(this).apply {
+            text = "KARTUMU"; textSize = 12f; letterSpacing = 0.08f
+            typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.rgb(190, 239, 213))
+        })
+        table.addView(buildCardRow(blackjackPlayerHand))
+        table.addView(TextView(this).apply {
+            text = if (blackjackPlayerHand.isEmpty()) "" else "Nilai kartu: " + handValue(blackjackPlayerHand)
+            textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.WHITE)
+            setPadding(0, dp(8), 0, dp(4))
+        })
+        table.addView(TextView(this).apply {
+            text = blackjackMessage; textSize = 14f; gravity = Gravity.CENTER
+            setTextColor(Color.WHITE); setPadding(dp(6), dp(8), dp(6), dp(4))
+        })
+        chatColumn.addView(table, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(12) })
+
+        val chipCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = panelBackground(p.panel, p.accent, 16)
+        }
+        chipCard.addView(TextView(this).apply {
+            text = "🪙 Chip: " + blackjackChips; textSize = 17f
+            typeface = Typeface.DEFAULT_BOLD; setTextColor(p.text)
+        })
+        chipCard.addView(TextView(this).apply {
+            text = "Taruhan tetap: 10 chip"; textSize = 12f; setTextColor(p.muted)
+            setPadding(0, dp(4), 0, dp(8))
+        })
+        chatColumn.addView(chipCard, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(10) })
+
+        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addAction(actions, if (blackjackRoundActive) "Hit" else "Mulai") {
+            if (blackjackRoundActive) {
+                blackjackPlayerHand.add(drawBlackjackCard())
+                val value = handValue(blackjackPlayerHand)
+                if (value > 21) finishBlackjackRound("Bust! Nilaimu " + value + ". Dealer menang.")
+                else if (value == 21) settleBlackjackRound()
+                renderPage()
+            } else startBlackjackRound()
+        }
+        addAction(actions, "Stand") {
+            if (blackjackRoundActive) { settleBlackjackRound(); renderPage() }
+            else toast("Tekan Mulai untuk memulai ronde.")
+        }
+        chatColumn.addView(actions, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
+        addAction(chatColumn, "Kembali ke Discover") { currentPage = "discover"; renderPage() }
+        addAction(chatColumn, "Aturan singkat") {
+            AlertDialog.Builder(this).setTitle("Aturan Blackjack")
+                .setMessage("Tujuan: mendekati 21 tanpa melewatinya. Hit mengambil satu kartu, Stand mengakhiri giliranmu. Dealer mengambil kartu sampai nilainya minimal 17. Menang mendapat 20 chip setelah taruhan 10 dipotong; seri mengembalikan taruhan.")
+                .setPositiveButton("Mengerti", null).show()
+        }
+    }
+
+    private fun buildCardRow(cards: List<BlackjackCard>, hideSecond: Boolean = false): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
+            setPadding(0, dp(2), 0, dp(2))
+        }
+        if (cards.isEmpty()) {
+            row.addView(TextView(this).apply {
+                text = "—"; textSize = 22f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
+            }, LinearLayout.LayoutParams(dp(54), dp(76)))
+        } else {
+            cards.forEachIndexed { index, card ->
+                val hidden = hideSecond && index == 1
+                val red = card.suit == "♥" || card.suit == "♦"
+                val cardView = TextView(this).apply {
+                    text = if (hidden) "?" else card.display
+                    textSize = 19f; typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER
+                    setTextColor(if (hidden) Color.WHITE else if (red) Color.rgb(190, 35, 48) else Color.rgb(25, 32, 43))
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                        cornerRadius = dp(9).toFloat()
+                        setColor(if (hidden) Color.rgb(32, 69, 113) else Color.WHITE)
+                        setStroke(dp(1), if (hidden) Color.rgb(121, 174, 228) else Color.rgb(220, 225, 232))
+                    }
+                    setPadding(dp(2), dp(2), dp(2), dp(2))
+                }
+                val params = LinearLayout.LayoutParams(dp(54), dp(76))
+                if (index > 0) params.leftMargin = dp(5)
+                row.addView(cardView, params)
+            }
+        }
+        return row
+    }
+
+    private fun startBlackjackRound() {
+        if (blackjackChips < 10) {
+            blackjackChips = 100
+            blackjackMessage = "Chip demo diisi ulang menjadi 100."
+        }
+        blackjackChips -= 10
+        blackjackDeck = (1..13).flatMap { rank ->
+            listOf("♠", "♥", "♦", "♣").map { suit -> BlackjackCard(rank, suit) }
+        }.shuffled().toMutableList()
+        blackjackPlayerHand = mutableListOf(drawBlackjackCard(), drawBlackjackCard())
+        blackjackDealerHand = mutableListOf(drawBlackjackCard(), drawBlackjackCard())
+        blackjackRoundActive = true
+        blackjackMessage = "Giliranmu. Hit untuk mengambil kartu atau Stand untuk berhenti."
+        if (handValue(blackjackPlayerHand) == 21) settleBlackjackRound()
+        renderPage()
+    }
+
+    private fun drawBlackjackCard(): BlackjackCard {
+        if (blackjackDeck.isEmpty()) {
+            blackjackDeck = (1..13).flatMap { rank ->
+                listOf("♠", "♥", "♦", "♣").map { suit -> BlackjackCard(rank, suit) }
+            }.shuffled().toMutableList()
+        }
+        return blackjackDeck.removeAt(blackjackDeck.lastIndex)
+    }
+
+    private fun handValue(hand: List<BlackjackCard>): Int {
+        var total = hand.sumOf { it.rankValue() }
+        var aces = hand.count { it.rank == 1 }
+        while (total > 21 && aces > 0) { total -= 10; aces-- }
+        return total
+    }
+
+    private fun settleBlackjackRound() {
+        if (!blackjackRoundActive) return
+        while (handValue(blackjackDealerHand) < 17) blackjackDealerHand.add(drawBlackjackCard())
+        val player = handValue(blackjackPlayerHand)
+        val dealer = handValue(blackjackDealerHand)
+        when {
+            player > 21 -> finishBlackjackRound("Bust! Dealer menang.")
+            dealer > 21 -> { blackjackChips += 20; finishBlackjackRound("Dealer bust (" + dealer + "). Kamu menang +10 chip!") }
+            player > dealer -> { blackjackChips += 20; finishBlackjackRound("Kamu menang " + player + " vs " + dealer + "! +10 chip bersih.") }
+            player < dealer -> finishBlackjackRound("Dealer menang " + dealer + " vs " + player + ".")
+            else -> { blackjackChips += 10; finishBlackjackRound("Seri " + player + "–" + dealer + ". Taruhan dikembalikan.") }
+        }
+    }
+
+    private fun finishBlackjackRound(message: String) {
+        blackjackRoundActive = false
+        blackjackMessage = message
     }
 
     private fun renderMusicPage() {
@@ -1812,6 +2015,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private data class ChatMessage(val role: String, var text: String)
+    private data class BlackjackCard(val rank: Int, val suit: String) {
+        val display: String get() = (when (rank) { 1 -> "A"; 11 -> "J"; 12 -> "Q"; 13 -> "K"; else -> rank.toString() }) + suit
+        fun rankValue(): Int = when (rank) { 1 -> 11; in 11..13 -> 10; else -> rank }
+    }
     private data class BotProfile(
         val id: String, val name: String, val systemPrompt: String,
         val avatarPath: String? = null, val tagline: String = "",
