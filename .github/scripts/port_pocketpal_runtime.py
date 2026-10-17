@@ -34,7 +34,7 @@ shutil.copytree(assets, dest, dirs_exist_ok=True)
 entry = dest / html.name
 source = entry.read_text(encoding="utf-8")
 # Emit focused source diagnostics for the missing sendMessage global reported on-device.
-for token in ("sendMessage", "function send", "function generate", "onclick="):
+for token in ("Answer", "answer", "sendMessage", "function send", "function generate", "onclick="):
     hits = [m.start() for m in re.finditer(re.escape(token), source, flags=re.IGNORECASE)]
     print("SOURCE_DIAG", token, "count=", len(hits))
     for at in hits[:8]:
