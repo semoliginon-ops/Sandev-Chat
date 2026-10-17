@@ -23,6 +23,9 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.arm.aichat.AiChat
@@ -91,6 +94,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         loadLocalState()
         buildUi()
@@ -239,10 +243,17 @@ class MainActivity : AppCompatActivity() {
         addNavItem(navRow, "⌂", "Discover") { currentPage = "discover"; renderPage() }
         addNavItem(navRow, "▤", "Chats") { currentPage = "chats"; renderPage() }
         addNavItem(navRow, "♫", "Music") { currentPage = "music"; renderPage() }
-        addNavItem(navRow, "＋", "Create Bot") { createBot() }
+        addNavItem(navRow, "＋", "Create Bot") { currentPage = "create_bot"; renderPage() }
         addNavItem(navRow, "◉", "Profile") { currentPage = "profile"; renderPage() }
         root.addView(navRow)
         setContentView(root)
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            view.setPadding(dp(12), bars.top + dp(8), dp(12), maxOf(bars.bottom, ime.bottom) + dp(8))
+            insets
+        }
+        ViewCompat.requestApplyInsets(root)
         applyPalette()
         applyImages()
     }
@@ -299,7 +310,8 @@ class MainActivity : AppCompatActivity() {
             val label = (item.getChildAt(1) as? TextView)?.text?.toString().orEmpty()
             val selected = when (label) {
                 "Discover" -> currentPage == "discover"
-                "Chats" -> currentPage == "chats"
+                "Chats" -> currentPage == "chats" || currentPage == "conversation"
+                "Create Bot" -> currentPage == "create_bot"
                 "Music" -> currentPage == "music"
                 "Profile" -> currentPage == "profile"
                 else -> false
@@ -325,21 +337,23 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderPage() {
         if (!::chatColumn.isInitialized) return
-        val inConversation = currentPage == "chats"
-        // Keep the conversation composer directly above the Android IME.
-        // The main navigation must not occupy the bottom edge while typing.
+        val inConversation = currentPage == "conversation"
+        // Insets on the root reserve the real IME height, keeping the composer above the keyboard.
         composer.visibility = if (inConversation) View.VISIBLE else View.GONE
         navRow.visibility = if (inConversation) View.GONE else View.VISIBLE
         chatColumn.removeAllViews()
         when (currentPage) {
             "discover" -> renderDiscover()
-            "chats" -> { header.text = activeBot().name; renderMessages() }
+            "chats" -> renderChatHistory()
+            "conversation" -> { header.text = activeBot().name; renderMessages() }
             "music" -> renderMusicPage()
+            "create_bot" -> renderCreateBotPage()
             "profile" -> renderUserProfile()
             else -> renderDiscover()
         }
         navRow.setBackgroundColor(palettes[themeIndex].background)
         updateNavigationColors()
+        applyImages()
     }
 
     private fun addSectionTitle(title: String, subtitle: String? = null) {
@@ -356,47 +370,136 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderDiscover() {
         header.text = "Discover"
-        addSectionTitle("Temukan karakter", "Karakter lokalmu, siap diajak mengobrol kapan saja.")
-        val search = EditText(this).apply {
-            hint = "Cari karakter..."; setSingleLine(true); textSize = 14f
-            setTextColor(palettes[themeIndex].text); setHintTextColor(palettes[themeIndex].muted)
-            setBackgroundColor(palettes[themeIndex].panel)
+        val p = palettes[themeIndex]
+        addSectionTitle("Temukan karakter", "Pilih teman ngobrol, roleplay, atau karakter buatanmu sendiri.")
+
+        val feature = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            background = panelBackground(p.panel, p.accent, 20)
         }
-        chatColumn.addView(search, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(12) })
+        feature.addView(TextView(this).apply {
+            text = "RUANG KARAKTER"
+            textSize = 11f
+            letterSpacing = 0.12f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(p.accent)
+        })
+        feature.addView(TextView(this).apply {
+            text = "Cerita dimulai dari satu percakapan."
+            textSize = 20f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(p.text)
+            setPadding(0, dp(6), 0, dp(4))
+        })
+        feature.addView(TextView(this).apply {
+            text = "Temukan karakter yang cocok atau ciptakan karakter versimu."
+            textSize = 13f
+            setTextColor(p.muted)
+        })
+        feature.addView(TextView(this).apply {
+            text = "＋  Buat karakter baru"
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(p.accent)
+            setPadding(0, dp(12), 0, 0)
+            isClickable = true
+            setOnClickListener { currentPage = "create_bot"; renderPage() }
+        })
+        chatColumn.addView(feature, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(16) })
+
+        val search = EditText(this).apply {
+            hint = "⌕  Cari nama atau deskripsi karakter..."
+            setSingleLine(true)
+            textSize = 14f
+            setTextColor(p.text)
+            setHintTextColor(p.muted)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = panelBackground(p.panel, p.muted, 14)
+        }
+        chatColumn.addView(search, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(14) })
+        chatColumn.addView(TextView(this).apply {
+            text = "KARAKTER UNTUKMU"
+            textSize = 11f
+            letterSpacing = 0.1f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(p.muted)
+            setPadding(dp(2), 0, dp(2), dp(8))
+        })
         val cards = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         chatColumn.addView(cards)
         fun populate(filter: String) {
             cards.removeAllViews()
-            val p = palettes[themeIndex]
-            val visible = bots.filter { filter.isBlank() || it.name.contains(filter, true) || it.tagline.contains(filter, true) || it.description.contains(filter, true) }
+            val visible = bots.filter {
+                filter.isBlank() || it.name.contains(filter, true) ||
+                    it.tagline.contains(filter, true) || it.description.contains(filter, true)
+            }
             visible.forEach { bot ->
                 val card = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(12), dp(12), dp(12), dp(12)); setBackgroundColor(p.panel)
-                    isClickable = true; isFocusable = true
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(12), dp(12), dp(12), dp(12))
+                    background = panelBackground(p.panel, Color.rgb(53, 66, 88), 18)
+                    isClickable = true
+                    isFocusable = true
                     setOnClickListener {
                         activeBotId = bot.id
                         prefs().edit().putString(KEY_ACTIVE_BOT, activeBotId).apply()
-                        currentPage = "chats"
-                        if (bot.greeting.isNotBlank() && messages.isEmpty()) { messages.add(ChatMessage("assistant", bot.greeting)); saveMessages() }
-                        if (engineReady && activeModelName != null) lifecycleScope.launch { try { engine.setSystemPrompt(bot.systemPrompt.ifBlank { DEFAULT_SYSTEM_PROMPT }) } catch (_: Exception) {} }
+                        currentPage = "conversation"
+                        if (bot.greeting.isNotBlank() && messages.isEmpty()) {
+                            messages.add(ChatMessage("assistant", bot.greeting))
+                            saveMessages()
+                        }
+                        if (engineReady && activeModelName != null) lifecycleScope.launch {
+                            try { engine.setSystemPrompt(bot.systemPrompt.ifBlank { DEFAULT_SYSTEM_PROMPT }) } catch (_: Exception) {}
+                        }
                         renderPage()
                     }
                 }
                 val avatar = ImageView(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(dp(64), dp(64)); scaleType = ImageView.ScaleType.CENTER_CROP
-                    setBackgroundColor(p.background)
-                    bot.avatarPath?.let { path -> if (File(path).exists()) decodeScaledBitmap(path, 192)?.let { setImageBitmap(it) } }
+                    layoutParams = LinearLayout.LayoutParams(dp(76), dp(84))
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    background = panelBackground(p.background, p.muted, 14)
+                    bot.avatarPath?.let { path ->
+                        if (File(path).exists()) decodeScaledBitmap(path, 192)?.let { setImageBitmap(it) }
+                    }
                 }
                 card.addView(avatar)
-                val textCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, 0, 0); layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
-                textCol.addView(TextView(this).apply { text = bot.name; textSize = 16f; typeface = Typeface.DEFAULT_BOLD; setTextColor(p.text) })
-                textCol.addView(TextView(this).apply { text = bot.tagline.ifBlank { bot.description.ifBlank { "Karakter offline Sandev" } }; textSize = 12f; setTextColor(p.muted); maxLines = 3 })
-                textCol.addView(TextView(this).apply { text = "Mulai chat  ›"; textSize = 12f; setTextColor(p.accent); setPadding(0, dp(6), 0, 0) })
+                val textCol = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(12), 0, 0, 0)
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                }
+                textCol.addView(TextView(this).apply {
+                    text = bot.name
+                    textSize = 16f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(p.text)
+                })
+                textCol.addView(TextView(this).apply {
+                    text = bot.tagline.ifBlank { bot.description.ifBlank { "Karakter offline Sandev" } }
+                    textSize = 12f
+                    setTextColor(p.muted)
+                    maxLines = 3
+                    setPadding(0, dp(4), 0, 0)
+                })
+                textCol.addView(TextView(this).apply {
+                    text = "MULAI CHAT  ›"
+                    textSize = 11f
+                    letterSpacing = 0.04f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(p.accent)
+                    setPadding(0, dp(8), 0, 0)
+                })
                 card.addView(textCol)
                 cards.addView(card, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(10) })
             }
-            if (visible.isEmpty()) cards.addView(TextView(this).apply { text = "Karakter tidak ditemukan. Tekan Create untuk membuat karakter baru."; textSize = 14f; setTextColor(p.muted); setPadding(dp(8), dp(20), dp(8), dp(20)) })
+            if (visible.isEmpty()) cards.addView(TextView(this).apply {
+                text = "Karakter tidak ditemukan. Coba kata lain atau buat karakter baru."
+                textSize = 14f
+                setTextColor(p.muted)
+                setPadding(dp(8), dp(20), dp(8), dp(20))
+            })
         }
         search.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -410,7 +513,25 @@ class MainActivity : AppCompatActivity() {
         header.text = "Music"
         addSectionTitle("Musik", "Pilih musik lokal untuk menemani percakapan.")
         val p = palettes[themeIndex]
-        chatColumn.addView(TextView(this).apply { text = currentMusicName?.let { "Dipilih: $it" } ?: "Belum ada musik dipilih"; textSize = 14f; setTextColor(p.text); setPadding(dp(8), dp(12), dp(8), dp(12)) })
+        val playerCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            background = panelBackground(p.panel, Color.rgb(53, 66, 88), 18)
+        }
+        playerCard.addView(TextView(this).apply { text = "♫"; textSize = 32f; setTextColor(p.accent) })
+        playerCard.addView(TextView(this).apply {
+            text = currentMusicName?.let { it } ?: "Belum ada musik dipilih"
+            textSize = 17f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(p.text)
+            setPadding(0, dp(8), 0, dp(4))
+        })
+        playerCard.addView(TextView(this).apply {
+            text = "Audio dari perangkatmu"
+            textSize = 12f
+            setTextColor(p.muted)
+        })
+        chatColumn.addView(playerCard, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(12) })
         addAction(chatColumn, "Pilih file musik") { musicPicker.launch(arrayOf("audio/*")) }
         addAction(chatColumn, "Putar / jeda") { toggleMusic() }
         addAction(chatColumn, "Hentikan musik") { stopMusic(); renderPage() }
@@ -418,25 +539,63 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderUserProfile() {
         header.text = "Profil pengguna"
-        addSectionTitle("Persona kamu", "Profil disimpan di perangkat dan dapat dipakai saat roleplay.")
+        addSectionTitle("Persona kamu", "Atur identitas yang ingin kamu bawa ke dalam percakapan.")
         val p = palettes[themeIndex]
+        val profileCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(16), dp(18), dp(16), dp(18))
+            background = panelBackground(p.panel, Color.rgb(53, 66, 88), 20)
+        }
         val avatar = ImageView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(96), dp(96)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(8) }
-            scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(p.panel)
+            layoutParams = LinearLayout.LayoutParams(dp(100), dp(100)).apply { bottomMargin = dp(10) }
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = panelBackground(p.background, p.accent, 50)
             profilePath?.let { path -> if (File(path).exists()) decodeScaledBitmap(path, 256)?.let { setImageBitmap(it) } }
         }
-        chatColumn.addView(avatar)
-        addAction(chatColumn, "Ganti foto pengguna") { userImagePicker.launch(arrayOf("image/*")) }
-        val name = EditText(this).apply { hint = "Nama tampilan"; setText(userName); setTextColor(p.text); setHintTextColor(p.muted) }
-        val handle = EditText(this).apply { hint = "Username (opsional)"; setText(userHandle); setTextColor(p.text); setHintTextColor(p.muted); setSingleLine(true) }
-        val bio = EditText(this).apply { hint = "Bio singkat"; setText(userBio); setTextColor(p.text); setHintTextColor(p.muted); minLines = 2; gravity = Gravity.TOP }
-        val persona = EditText(this).apply { hint = "Persona / informasi diri untuk roleplay"; setText(userPersona); setTextColor(p.text); setHintTextColor(p.muted); minLines = 3; gravity = Gravity.TOP }
-        listOf(name, handle, bio, persona).forEach { field -> chatColumn.addView(field, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) }) }
+        profileCard.addView(avatar)
+        profileCard.addView(TextView(this).apply {
+            text = userName.ifBlank { "You" }
+            textSize = 20f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(p.text)
+        })
+        profileCard.addView(TextView(this).apply {
+            text = userHandle.takeIf { it.isNotBlank() }?.let { "@$it" } ?: "PROFIL LOKAL"
+            textSize = 12f
+            setTextColor(p.accent)
+            setPadding(0, dp(3), 0, dp(8))
+        })
+        addAction(profileCard, "Ganti foto pengguna") { userImagePicker.launch(arrayOf("image/*")) }
+        chatColumn.addView(profileCard, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(12) })
+        fun profileField(hintText: String, value: String, lines: Int = 1) = EditText(this).apply {
+            hint = hintText
+            setText(value)
+            textSize = 14f
+            minLines = lines
+            maxLines = if (lines == 1) 2 else lines + 2
+            gravity = if (lines > 1) Gravity.TOP else Gravity.CENTER_VERTICAL
+            setTextColor(p.text)
+            setHintTextColor(p.muted)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = panelBackground(p.panel, p.muted, 12)
+        }
+        val name = profileField("Nama tampilan", userName)
+        val handle = profileField("Username (opsional)", userHandle)
+        val bio = profileField("Bio singkat", userBio, 2)
+        val persona = profileField("Persona / informasi diri untuk roleplay", userPersona, 3)
+        listOf(name, handle, bio, persona).forEach { field ->
+            chatColumn.addView(field, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
+        }
         addAction(chatColumn, "Simpan profil") {
-            userName = name.text.toString().trim().ifBlank { "You" }; userHandle = handle.text.toString().trim()
-            userBio = bio.text.toString().trim(); userPersona = persona.text.toString().trim()
-            prefs().edit().putString(KEY_USER_NAME, userName).putString(KEY_USER_HANDLE, userHandle).putString(KEY_USER_BIO, userBio).putString(KEY_USER_PERSONA, userPersona).apply()
+            userName = name.text.toString().trim().ifBlank { "You" }
+            userHandle = handle.text.toString().trim().removePrefix("@")
+            userBio = bio.text.toString().trim()
+            userPersona = persona.text.toString().trim()
+            prefs().edit().putString(KEY_USER_NAME, userName).putString(KEY_USER_HANDLE, userHandle)
+                .putString(KEY_USER_BIO, userBio).putString(KEY_USER_PERSONA, userPersona).apply()
             toast("Profil pengguna tersimpan.")
+            renderPage()
         }
     }
 
@@ -655,67 +814,87 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun createBot() {
-        val form = LinearLayout(this).apply {
+        currentPage = "create_bot"
+        renderPage()
+    }
+
+    private fun renderCreateBotPage() {
+        header.text = "Create Bot"
+        addSectionTitle("Ciptakan karakter", "Isi detail karakter seperti membuat persona di Character.AI.")
+        val p = palettes[themeIndex]
+        val formCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(8), dp(20), dp(12))
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            background = panelBackground(p.panel, Color.rgb(53, 66, 88), 18)
         }
         fun field(hintText: String, lines: Int = 1): EditText = EditText(this).apply {
-            hint = hintText; textSize = 15f; minLines = lines; maxLines = if (lines == 1) 2 else lines + 2
+            hint = hintText
+            textSize = 14f
+            minLines = lines
+            maxLines = if (lines == 1) 2 else lines + 2
             gravity = if (lines > 1) Gravity.TOP else Gravity.CENTER_VERTICAL
-            if (lines == 1) isSingleLine = false
+            setTextColor(p.text)
+            setHintTextColor(p.muted)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = panelBackground(p.background, p.muted, 12)
         }
-        val name = field("Nama karakter")
+        val name = field("Nama karakter *")
         val tagline = field("Tagline singkat")
         val description = field("Deskripsi karakter", 3)
         val greeting = field("Greeting / sapaan awal", 3)
-        val prompt = field("Definisi kepribadian dan latar belakang", 5)
+        val prompt = field("Kepribadian, gaya bicara, dan latar belakang", 5)
         val example = field("Contoh dialog (opsional)", 3)
-        listOf(name, tagline, description, greeting, prompt, example).forEach { edit ->
-            form.addView(edit, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(6) })
+        fun addLabeled(label: String, edit: EditText) {
+            formCard.addView(TextView(this).apply {
+                text = label
+                textSize = 12f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(p.muted)
+                setPadding(dp(2), dp(10), dp(2), dp(4))
+            })
+            formCard.addView(edit, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
-        val scroll = ScrollView(this).apply {
-            isFillViewport = true
-            addView(form)
-        }
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Buat bot baru")
-            .setMessage("Beri nama dan atur cara bot menjawab.")
-            .setView(scroll)
-            .setNegativeButton("Batal", null)
-            .setPositiveButton("Simpan", null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val botName = name.text.toString().trim().ifBlank { "Karakter ${bots.size + 1}" }
-                val botDescription = description.text.toString().trim()
-                val botGreeting = greeting.text.toString().trim()
-                val fullPrompt = buildString {
-                    append(prompt.text.toString().trim())
-                    if (botDescription.isNotBlank()) append("\n\nDeskripsi karakter: ").append(botDescription)
-                    if (example.text.toString().isNotBlank()) append("\n\nContoh dialog:\n").append(example.text.toString().trim())
-                    if (userPersona.isNotBlank()) append("\n\nPersona pengguna: ").append(userPersona)
-                }.trim()
-                val bot = BotProfile(UUID.randomUUID().toString(), botName, fullPrompt, null,
-                    tagline.text.toString().trim(), botDescription, botGreeting, example.text.toString().trim())
-                bots.add(bot)
-                activeBotId = bot.id
-                saveBots()
-                prefs().edit().putString(KEY_ACTIVE_BOT, activeBotId).apply()
-                dialog.dismiss()
-                currentPage = "discover"
-                renderPage()
-                toast("Karakter ${bot.name} tersimpan.")
-                if (engineReady && activeModelName != null) {
-                    val file = modelFile(activeModelName!!)
-                    if (file.exists()) loadModelFile(file, false)
-                } else {
-                    status.text = "Karakter ${bot.name} siap. Pilih model untuk mulai."
-                }
+        addLabeled("NAMA", name)
+        addLabeled("TAGLINE", tagline)
+        addLabeled("DESKRIPSI", description)
+        addLabeled("SAPAAN PERTAMA", greeting)
+        addLabeled("KEPRIBADIAN / SYSTEM PROMPT", prompt)
+        addLabeled("CONTOH DIALOG", example)
+        chatColumn.addView(formCard, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(12) })
+        addAction(chatColumn, "Simpan karakter") {
+            val botName = name.text.toString().trim()
+            if (botName.isBlank()) {
+                name.error = "Nama karakter wajib diisi"
+                toast("Isi nama karakter dulu.")
+                return@addAction
             }
+            val botDescription = description.text.toString().trim()
+            val botGreeting = greeting.text.toString().trim()
+            val exampleText = example.text.toString().trim()
+            val fullPrompt = buildString {
+                append(prompt.text.toString().trim())
+                if (botDescription.isNotBlank()) append("\n\nDeskripsi karakter: ").append(botDescription)
+                if (exampleText.isNotBlank()) append("\n\nContoh dialog:\n").append(exampleText)
+                if (userPersona.isNotBlank()) append("\n\nPersona pengguna: ").append(userPersona)
+            }.trim()
+            val bot = BotProfile(UUID.randomUUID().toString(), botName, fullPrompt, null,
+                tagline.text.toString().trim(), botDescription, botGreeting, exampleText)
+            bots.add(bot)
+            activeBotId = bot.id
+            saveBots()
+            prefs().edit().putString(KEY_ACTIVE_BOT, activeBotId).apply()
+            if (messages.isEmpty() && botGreeting.isNotBlank()) {
+                messages.add(ChatMessage("assistant", botGreeting))
+                saveMessages()
+            }
+            currentPage = "conversation"
+            if (engineReady && activeModelName != null) lifecycleScope.launch {
+                try { engine.setSystemPrompt(bot.systemPrompt.ifBlank { DEFAULT_SYSTEM_PROMPT }) } catch (_: Exception) {}
+            }
+            renderPage()
+            toast("Karakter $botName tersimpan. Ketuk avatar di header untuk mengganti fotonya.")
         }
-        dialog.show()
-        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        addAction(chatColumn, "Batal") { currentPage = "discover"; renderPage() }
     }
 
     private fun cycleTheme() {
@@ -904,7 +1083,7 @@ class MainActivity : AppCompatActivity() {
         messages.add(assistant)
         saveMessages()
         renderMessages()
-        currentAssistantView = chatColumn.getChildAt(chatColumn.childCount - 1) as? TextView
+        currentAssistantView = (chatColumn.getChildAt(chatColumn.childCount - 1) as? LinearLayout)?.getChildAt(0) as? TextView
         input.isEnabled = false
         sendButton.isEnabled = false
         status.text = "Bot sedang mengetik..."
@@ -913,7 +1092,7 @@ class MainActivity : AppCompatActivity() {
                 engine.sendUserPrompt(text, predictLength = 256).collect { token ->
                     assistant.text += token
                     withContext(Dispatchers.Main) {
-                        currentAssistantView?.text = "Bot: ${assistant.text}"
+                        currentAssistantView?.text = assistant.text
                         chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
                     }
                 }
@@ -926,7 +1105,7 @@ class MainActivity : AppCompatActivity() {
                 assistant.text = if (assistant.text.isBlank()) "Gagal menghasilkan jawaban: ${e.message}" else assistant.text
                 saveMessages()
                 withContext(Dispatchers.Main) {
-                    currentAssistantView?.text = "Bot: ${assistant.text}"
+                    currentAssistantView?.text = assistant.text
                     status.text = "Jawaban selesai dengan kendala."
                 }
             } finally {
@@ -938,24 +1117,117 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun renderChatHistory() {
+        header.text = "Chats"
+        addSectionTitle("Percakapan", "Lanjutkan obrolan terakhir atau pilih karakter lain dari Discover.")
+        val p = palettes[themeIndex]
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            background = panelBackground(p.panel, p.accent, 18)
+        }
+        val avatar = ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(60), dp(60))
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = panelBackground(p.background, p.muted, 14)
+            activeBot().avatarPath?.let { path -> if (File(path).exists()) decodeScaledBitmap(path, 192)?.let { setImageBitmap(it) } }
+        }
+        card.addView(avatar)
+        val details = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        details.addView(TextView(this).apply {
+            text = activeBot().name
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(p.text)
+        })
+        details.addView(TextView(this).apply {
+            text = messages.lastOrNull()?.text?.takeIf { it.isNotBlank() } ?: "Belum ada pesan — mulai percakapanmu."
+            textSize = 12f
+            setTextColor(p.muted)
+            maxLines = 2
+            setPadding(0, dp(4), 0, dp(6))
+        })
+        details.addView(TextView(this).apply {
+            text = "LANJUTKAN  ›"
+            textSize = 11f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(p.accent)
+            setOnClickListener { currentPage = "conversation"; renderPage() }
+        })
+        card.addView(details)
+        card.isClickable = true
+        card.setOnClickListener { currentPage = "conversation"; renderPage() }
+        chatColumn.addView(card, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(12) })
+        addAction(chatColumn, "Temukan karakter lain") { currentPage = "discover"; renderPage() }
+    }
+
     private fun renderMessages() {
         if (!::chatColumn.isInitialized) return
         chatColumn.removeAllViews()
         val p = palettes[themeIndex]
-        messages.forEach { message ->
-            val tv = TextView(this).apply {
-                text = (if (message.role == "user") "Kamu: " else "Bot: ") + message.text
-                textSize = 15f
-                setTextColor(p.text)
-                setPadding(dp(10), dp(8), dp(10), dp(8))
-                setBackgroundColor(if (message.role == "user") p.userBubble else p.botBubble)
+        if (messages.isEmpty()) {
+            val welcome = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(20), dp(28), dp(20), dp(28))
+                background = panelBackground(p.background, Color.rgb(53, 66, 88), 18)
             }
-            val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            lp.bottomMargin = dp(8)
-            chatColumn.addView(tv, lp)
+            welcome.addView(TextView(this).apply {
+                text = "✦"
+                textSize = 32f
+                gravity = Gravity.CENTER
+                setTextColor(p.accent)
+            })
+            welcome.addView(TextView(this).apply {
+                text = "Mulai percakapan dengan ${activeBot().name}"
+                textSize = 17f
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                setTextColor(p.text)
+                setPadding(0, dp(8), 0, dp(4))
+            })
+            welcome.addView(TextView(this).apply {
+                text = activeBot().greeting.ifBlank { "Tulis pesan pertamamu di bawah." }
+                textSize = 13f
+                gravity = Gravity.CENTER
+                setTextColor(p.muted)
+            })
+            chatColumn.addView(welcome, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(12) })
+        } else {
+            messages.forEach { message ->
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = if (message.role == "user") Gravity.END else Gravity.START
+                }
+                val bubble = TextView(this).apply {
+                    text = message.text
+                    textSize = 15f
+                    setTextColor(p.text)
+                    setPadding(dp(13), dp(10), dp(13), dp(10))
+                    maxWidth = (resources.displayMetrics.widthPixels * 0.78f).toInt()
+                    background = panelBackground(if (message.role == "user") p.userBubble else p.botBubble, if (message.role == "user") p.accent else Color.rgb(53, 66, 88), 16)
+                }
+                row.addView(bubble, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+                val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                lp.bottomMargin = dp(9)
+                chatColumn.addView(row, lp)
+            }
         }
         chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
     }
+
+    private fun panelBackground(fill: Int, stroke: Int, radiusDp: Int): android.graphics.drawable.GradientDrawable =
+        android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dp(radiusDp).toFloat()
+            setColor(fill)
+            setStroke(dp(1), stroke)
+        }
 
     private fun loadLocalState() {
         themeIndex = prefs().getInt(KEY_THEME, 0).coerceIn(0, palettes.lastIndex)
@@ -1068,7 +1340,7 @@ class MainActivity : AppCompatActivity() {
         private const val DEFAULT_SYSTEM_PROMPT =
             "You are Sandev, a helpful AI assistant. Answer clearly in the user's language."
         private val palettes = listOf(
-            Palette(Color.rgb(16,19,25), Color.rgb(29,34,44), Color.rgb(245,246,250), Color.rgb(166,174,190), Color.rgb(139,124,255), Color.rgb(48,54,72), Color.rgb(36,43,56)),
+            Palette(Color.rgb(10,16,29), Color.rgb(20,29,47), Color.rgb(242,247,255), Color.rgb(151,166,190), Color.rgb(55,207,239), Color.rgb(29,54,80), Color.rgb(25,37,57)),
             Palette(Color.rgb(248,249,252), Color.rgb(255,255,255), Color.rgb(29,33,42), Color.rgb(105,112,124), Color.rgb(48,110,230), Color.rgb(220,234,255), Color.rgb(236,239,245)),
             Palette(Color.rgb(16,28,35), Color.rgb(26,43,52), Color.rgb(236,247,250), Color.rgb(151,180,190), Color.rgb(32,190,170), Color.rgb(31,76,75), Color.rgb(33,55,67)),
             Palette(Color.rgb(30,18,35), Color.rgb(47,30,54), Color.rgb(250,241,255), Color.rgb(192,165,203), Color.rgb(221,112,255), Color.rgb(81,42,91), Color.rgb(59,39,69))
