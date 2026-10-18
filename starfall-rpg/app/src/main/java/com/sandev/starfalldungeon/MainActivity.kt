@@ -209,7 +209,7 @@ private class ForestGameView(context: Context) : View(context) {
         }
         trees.forEach { t ->
             paint.color = Color.rgb(22,43,31); c.drawRect(t.left-4,t.top+7,t.right+4,t.bottom+8,paint)
-            paint.color = Color.rgb(79,57,37); c.drawRect(t.centerX-7,t.centerY,t.centerX+7,t.bottom+7,paint)
+            paint.color = Color.rgb(79,57,37); c.drawRect(t.centerX()-7,t.centerY(),t.centerX()+7,t.bottom+7,paint)
             paint.color = Color.rgb(32,92,49); c.drawRect(t,paint)
             paint.color = Color.rgb(52,125,60); c.drawRect(t.left+6,t.top+6,t.right-8,t.bottom-10,paint)
             paint.color = Color.rgb(91,153,68); c.drawRect(t.left+13,t.top+10,t.left+22,t.top+19,paint)
