@@ -42,7 +42,7 @@ private data class Mob(
 private class ForestGameView(context: Context) : View(context) {
     private val prefs = context.getSharedPreferences("starfall_rpg_save", Context.MODE_PRIVATE)
     private val paint = Paint().apply { isAntiAlias = true; typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD) }
-    private val tone = ToneGenerator(AudioManager.STREAM_MUSIC, 38)
+    private val tone = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
     private data class Effect(var x: Float, var y: Float, var tx: Float, var ty: Float, var life: Float, val kind: Int)
     private val effects = mutableListOf<Effect>()
     private var hitFlash = 0f
@@ -92,7 +92,7 @@ private class ForestGameView(context: Context) : View(context) {
         6 -> 490; 7 -> 600; 8 -> 720; else -> 850
     }
     private fun say(s: String, t: Float = 2f) { message = s; messageTime = t }
-    private fun sfx(kind: Int) { try { tone.startTone(kind, if (kind == ToneGenerator.TONE_PROP_BEEP) 65 else 105) } catch (_: Exception) {} }
+    private fun sfx(kind: Int) { try { tone.startTone(kind, if (kind == ToneGenerator.TONE_PROP_BEEP) 150 else 210) } catch (_: Exception) {} }
     private fun fx(sx: Float, sy: Float, tx: Float, ty: Float, kind: Int, life: Float = 0.32f) { effects.add(Effect(sx,sy,tx,ty,life,kind)) }
     private fun save() {
         prefs.edit().putInt("level", level).putInt("exp", exp).putInt("gold", gold).putInt("kills", kills).putString("player_name", playerName).putString("hero", hero).putInt("potions", potions).putInt("materials", materials).putInt("weapon_level", weaponLevel).putInt("armor_level", armorLevel).putInt("skill_level", skillLevel).apply()
@@ -228,7 +228,7 @@ private class ForestGameView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         canvas.save(); canvas.scale(width / 960f, height / 540f)
-        if (screen == "GAME") { update(0.016f); drawForest(canvas); drawCharacters(canvas); drawEffects(canvas); drawHud(canvas) } else drawMenu(canvas)
+        if (screen == "GAME") { update(0.016f); drawForest(canvas); drawCharacters(canvas); drawEffects(canvas); drawHud(canvas) } else if (screen == "CITY") { updateCity(0.016f); drawCity(canvas) } else drawMenu(canvas)
         canvas.restore(); postInvalidateDelayed(16L)
     }
     private fun drawForest(c: Canvas) {
@@ -270,12 +270,12 @@ private class ForestGameView(context: Context) : View(context) {
             }
         }
         paint.color=Color.argb(80,0,0,0); c.drawOval(RectF(gemmaX-18,gemmaY+6,gemmaX+19,gemmaY+17),paint)
-        text(c,"🧙🏻‍♀️",gemmaX-18,gemmaY+9,31f,Color.WHITE)
+        text(c,"🧙‍♀️",gemmaX-18,gemmaY+9,31f,Color.WHITE)
         text(c,"✨",gemmaX+9,gemmaY-12+ kotlin.math.sin(clock*4f)*3f,15f,Color.WHITE)
         text(c,"GEMMA",gemmaX-23,gemmaY-25,9f,Color.rgb(235,202,255))
         if (invuln <= 0f || (clock * 12f).toInt() % 2 == 0) {
             paint.color=Color.argb(80,0,0,0); c.drawOval(RectF(x-16,y+7,x+17,y+17),paint)
-            text(c,when(hero){"Vanguard"->"🛡️";"Ranger"->"🏹";else->"🧙"},x-17,y+9,31f,Color.WHITE)
+            text(c,when(hero){"Vanguard"->"🧑🏻‍⚔️";"Ranger"->"🧝🏻‍♂️";else->"🧙🏻‍♂️"},x-20,y+9,33f,Color.WHITE)
             if(hitFlash>0f){paint.color=Color.argb(100,255,60,60);c.drawCircle(x,y-3,23f,paint)}
         }
     }
@@ -323,35 +323,60 @@ private class ForestGameView(context: Context) : View(context) {
         text(c,label,bx+12f,by+bh*0.62f,if(label.length>24) 11f else 14f,Color.WHITE)
     }
 
+    private fun cityBlocked(ax: Float, ay: Float): Boolean {
+        if (ax < 28f || ax > 932f || ay < 105f || ay > 455f) return true
+        val buildings = listOf(RectF(48f,168f,238f,320f), RectF(258f,168f,448f,320f), RectF(468f,168f,658f,320f))
+        return buildings.any { it.contains(ax, ay) }
+    }
+
+    private fun updateCity(dt: Float) {
+        val speed = if (dodgeTime > 0f) 230f else 145f
+        val nx = x + moveX * speed * dt; val ny = y + moveY * speed * dt
+        if (!cityBlocked(nx, y)) x = nx
+        if (!cityBlocked(x, ny)) y = ny
+        val followX = if (command == "RANGE") x - 65f else x - 35f
+        val followY = y + 28f
+        gemmaX += (followX.coerceIn(30f, 925f) - gemmaX) * min(1f, dt * 3f)
+        gemmaY += (followY.coerceIn(105f, 445f) - gemmaY) * min(1f, dt * 3f)
+    }
+
     private fun drawCity(c: Canvas) {
-        c.drawColor(Color.rgb(37,49,58))
-        paint.shader=LinearGradient(0f,0f,0f,540f,Color.rgb(63,105,125),Color.rgb(228,173,111),Shader.TileMode.CLAMP);c.drawRect(0f,0f,960f,540f,paint);paint.shader=null
-        // sunset haze and distant skyline
-        paint.color=Color.argb(90,255,222,157);c.drawCircle(760f,90f,75f,paint)
-        for(i in 0..9){val bx=i*105f-15f;val hh=75f+(i*37%80);paint.color=if(i%2==0)Color.rgb(76,96,92) else Color.rgb(89,105,97);c.drawRect(bx,220f-hh,bx+82f,280f,paint);paint.color=Color.rgb(186,157,105);for(wx in 0..2)for(wy in 0..2)c.drawRect(bx+12f+wx*22f,235f-hh+wy*22f,bx+20f+wx*22f,244f-hh+wy*22f,paint)}
-        paint.color=Color.rgb(123,104,79);c.drawRect(0f,300f,960f,540f,paint)
-        paint.color=Color.rgb(153,132,99);c.drawRect(0f,330f,960f,510f,paint)
-        for(i in 0..12){paint.color=if(i%2==0)Color.rgb(174,151,112) else Color.rgb(138,119,88);c.drawRect(i*80f,330f,i*80f+2f,510f,paint)}
-        // Inn, shop, blacksmith
-        val buildings=listOf(60f to "🏨",275f to "🛒",490f to "⚒️")
+        // Asterfall: warm evening sky, distant hills, a plaza, and more detailed storefronts.
+        paint.shader=LinearGradient(0f,0f,0f,540f,Color.rgb(52,91,125),Color.rgb(239,173,111),Shader.TileMode.CLAMP);c.drawRect(0f,0f,960f,540f,paint);paint.shader=null
+        paint.color=Color.argb(100,255,233,168);c.drawCircle(805f,88f,57f,paint)
+        paint.color=Color.rgb(72,103,96);c.drawOval(RectF(-80f,140f,400f,300f),paint);c.drawOval(RectF(330f,125f,760f,300f),paint);c.drawOval(RectF(660f,155f,1060f,310f),paint)
+        for(i in 0..8){val bx=i*116f-25f;val hh=65f+(i*29%74);paint.color=if(i%2==0)Color.rgb(77,94,91) else Color.rgb(91,105,96);c.drawRect(bx,224f-hh,bx+88f,292f,paint);paint.color=Color.rgb(218,184,119);for(wx in 0..2)for(wy in 0..2)c.drawRoundRect(RectF(bx+12f+wx*24f,235f-hh+wy*22f,bx+21f+wx*24f,246f-hh+wy*22f),2f,2f,paint)}
+        paint.color=Color.rgb(57,104,69);c.drawRect(0f,285f,960f,540f,paint)
+        paint.shader=LinearGradient(0f,300f,0f,510f,Color.rgb(190,166,126),Color.rgb(126,112,94),Shader.TileMode.CLAMP);c.drawRoundRect(RectF(0f,306f,960f,510f),10f,10f,paint);paint.shader=null
+        paint.color=Color.rgb(209,190,153);c.drawRect(0f,300f,960f,309f,paint)
+        for(i in 0..23){val xx=i*42f;paint.color=if(i%2==0)Color.rgb(154,137,111) else Color.rgb(173,153,122);c.drawLine(xx,315f,xx+18f,495f,paint)}
+        for(i in 0..17){val yy=320f+i*10f;paint.color=Color.argb(55,54,44,36);c.drawLine(0f,yy,960f,yy+3f,paint)}
+        for(g in listOf(18f to 280f,690f to 280f,875f to 286f)){paint.color=Color.rgb(42,78,48);c.drawRoundRect(RectF(g.first,g.second,g.first+65f,g.second+38f),7f,7f,paint);for(k in 0..4){paint.color=Color.rgb(101,157,73);c.drawCircle(g.first+9f+k*12f,g.second+12f+(k%2)*9f,5f,paint)}}
+        val buildings=listOf(48f to "🏨",258f to "🛒",468f to "⚒️")
         buildings.forEachIndexed { idx,b ->
-            val bx=b.first;paint.color=Color.rgb(81,54,45);c.drawRect(bx,184f,bx+165f,325f,paint)
-            paint.color=Color.rgb(169,119,72);c.drawRect(bx-10,169f,bx+175f,193f,paint)
-            paint.color=Color.rgb(109,48,48);c.drawRect(bx+50,249f,bx+105f,325f,paint)
-            text(c,b.second,bx+61f,237f,28f,Color.WHITE)
-            text(c,listOf("INN","ITEM SHOP","SMITHY")[idx],bx+36f,159f,12f,Color.rgb(255,238,190))
+            val bx=b.first
+            paint.color=Color.argb(75,0,0,0);c.drawRoundRect(RectF(bx+7f,188f,bx+197f,330f),5f,5f,paint)
+            paint.color=Color.rgb(91,62,48);c.drawRect(bx,174f,bx+190f,321f,paint)
+            paint.color=Color.rgb(190,147,94);c.drawRect(bx+8f,183f,bx+182f,313f,paint)
+            paint.color=Color.rgb(129,75,56);c.drawRect(bx+15f,190f,bx+175f,311f,paint)
+            paint.color=Color.rgb(108,42,48);c.drawPath(android.graphics.Path().apply{moveTo(bx-10f,184f);lineTo(bx+95f,125f);lineTo(bx+200f,184f);close()},paint)
+            paint.color=Color.rgb(222,176,103);c.drawRect(bx+22f,196f,bx+168f,204f,paint)
+            for(wx in 0..2){paint.color=Color.rgb(238,205,126);c.drawRoundRect(RectF(bx+24f+wx*49f,216f,bx+51f+wx*49f,246f),3f,3f,paint);paint.color=Color.rgb(58,80,91);c.drawRect(bx+28f+wx*49f,220f,bx+47f+wx*49f,242f,paint)}
+            paint.color=Color.rgb(94,52,43);c.drawRoundRect(RectF(bx+70f,259f,bx+120f,321f),4f,4f,paint);paint.color=Color.rgb(202,164,103);c.drawCircle(bx+109f,289f,3f,paint)
+            text(c,b.second,bx+79f,173f,25f,Color.WHITE)
+            text(c,listOf("THE WAYFARER INN","MERCHANTS ROW","IRON AND EMBER")[idx],bx+23f,164f,10f,Color.rgb(255,238,190))
         }
-        text(c,"🏹",720f,350f,38f,Color.WHITE);text(c,"🧙🏻‍♀️",820f,350f,38f,Color.WHITE)
-        text(c,"🧑‍🌾",590f,374f,34f,Color.WHITE);text(c,"🧔",660f,410f,34f,Color.WHITE)
-        text(c,"🌀",786f,455f,65f,Color.WHITE)
-        paint.color=Color.argb(210,12,23,25);c.drawRoundRect(RectF(20f,18f,490f,85f),9f,9f,paint)
-        text(c,"🏙️ KOTA ASTERFALL",38f,48f,21f,Color.rgb(255,222,153))
-        text(c,cityMessage.take(55),38f,70f,11f,Color.WHITE)
-        menuButton(c,"🧑‍🌾 WARGA",30f,420f,150f,42f)
-        menuButton(c,"🛒 TOKO",190f,420f,150f,42f)
-        menuButton(c,"⚒️ PANDAI BESI",350f,420f,180f,42f)
-        menuButton(c,"🌀 PORTAL HUTAN",690f,475f,240f,45f,true)
-        menuButton(c,"KEMBALI",30f,475f,150f,42f)
+        text(c,"🏹",700f,353f,34f,Color.WHITE);text(c,"🧙‍♀️",758f,344f,34f,Color.WHITE);text(c,"🧑‍🌾",850f,358f,32f,Color.WHITE);text(c,"🧔",650f,402f,32f,Color.WHITE)
+        paint.color=Color.rgb(88,67,94);c.drawRoundRect(RectF(790f,334f,866f,425f),20f,20f,paint);paint.color=Color.rgb(159,116,191);c.drawRoundRect(RectF(800f,344f,856f,415f),17f,17f,paint);paint.shader=RadialGradient(828f,380f,35f,intArrayOf(Color.rgb(166,234,255),Color.rgb(79,92,199),Color.rgb(28,45,74)),null,Shader.TileMode.CLAMP);c.drawCircle(828f,380f,29f,paint);paint.shader=null;text(c,"🌀",808f,389f,34f,Color.WHITE)
+        // Hero and Gemma are drawn last and follow the player around the town.
+        paint.color=Color.argb(95,0,0,0);c.drawOval(RectF(gemmaX-17,gemmaY+5,gemmaX+18,gemmaY+16),paint);text(c,"🧙‍♀️",gemmaX-18,gemmaY+8,31f,Color.WHITE);text(c,"GEMMA",gemmaX-21,gemmaY-22,9f,Color.rgb(255,224,255))
+        paint.color=Color.argb(95,0,0,0);c.drawOval(RectF(x-17,y+6,x+18,y+17),paint)
+        val heroEmoji=when(hero){"Vanguard"->"🧑🏻‍⚔️";"Ranger"->"🧝🏻‍♂️";else->"🧙🏻‍♂️"}
+        text(c,heroEmoji,x-20,y+9,33f,Color.WHITE);text(c,playerName.ifBlank{"HERO"}.take(12),x-24,y-22,10f,Color.rgb(255,238,185))
+        paint.color=Color.argb(218,12,23,25);c.drawRoundRect(RectF(18f,16f,465f,82f),9f,9f,paint);text(c,"🏙️ KOTA ASTERFALL",34f,43f,20f,Color.rgb(255,222,153));text(c,cityMessage.take(52),34f,65f,11f,Color.WHITE)
+        paint.color=Color.argb(125,190,210,190);c.drawCircle(88f,445f,49f,paint);paint.color=Color.argb(200,49,90,75);c.drawCircle(88f+moveX*19f,445f+moveY*19f,20f,paint);text(c,"GERAK",60f,510f,10f)
+        menuButton(c,"🧑‍🌾 WARGA",30f,420f,150f,42f);menuButton(c,"🛒 TOKO",190f,420f,150f,42f);menuButton(c,"⚒️ PANDAI BESI",350f,420f,180f,42f)
+        menuButton(c,"🌀 MASUK HUTAN",690f,475f,240f,45f,true);menuButton(c,"MENU",30f,475f,150f,42f)
     }
 
     private fun drawMenu(c: Canvas) {
@@ -442,20 +467,19 @@ private class ForestGameView(context: Context) : View(context) {
         fun hit(a:Float,b:Float,w:Float,h:Float)=tx in a..(a+w)&&ty in b..(b+h)
         when(screen){
             "MAIN" -> when{
-                hit(52f,158f,360f,49f)->if(playerName.isNotBlank()){screen="CITY";say("Selamat datang di Asterfall, "+playerName,3f)}else screen="CREATE"
+                hit(52f,158f,360f,49f)->if(playerName.isNotBlank()){screen="CITY";x=745f;y=385f;gemmaX=700f;gemmaY=410f;moveX=0f;moveY=0f;cityMessage="Selamat datang di Asterfall, "+playerName;sfx(ToneGenerator.TONE_PROP_ACK)}else screen="CREATE"
                 hit(52f,218f,360f,45f)->screen="CREATE"
                 hit(52f,274f,170f,43f)->screen="CHARACTER";hit(242f,274f,170f,43f)->screen="INVENTORY"
                 hit(52f,328f,170f,43f)->screen="SKILLS";hit(242f,328f,170f,43f)->screen="EQUIPMENT"
                 hit(52f,382f,170f,43f)->screen="QUESTS";hit(242f,382f,170f,43f)->screen="SETTINGS"
-                hit(520f,300f,280f,48f)->screen="CITY"
-                hit(520f,300f,280f,48f)->screen="CITY"
+                hit(520f,300f,280f,48f)->{screen="CITY";x=745f;y=385f;gemmaX=700f;gemmaY=410f;moveX=0f;moveY=0f;cityMessage="Selamat datang di Asterfall!";sfx(ToneGenerator.TONE_PROP_ACK)}
             }
             "CITY" -> when {
                 hit(30f,420f,150f,42f)->{cityMessage="Warga: Monster makin agresif di dalam hutan. Siapkan ramuan!";say(cityMessage,3f)}
                 hit(190f,420f,150f,42f)->{cityMessage="Pedagang: Ramuan dan bahan kerajinan akan tersedia di update berikutnya.";say(cityMessage,3f)}
                 hit(350f,420f,180f,42f)->{cityMessage="Pandai besi: Upgrade senjata dan armor bisa kamu beli dari menu Equipment.";screen="EQUIPMENT"}
-                hit(690f,475f,240f,45f)->{screen="GAME";x=470f;y=285f;say("🌀 Portal aktif! Selamat datang di Hutan Sunyi.",3f);sfx(ToneGenerator.TONE_PROP_ACK)}
-                hit(30f,475f,150f,42f)->screen="MAIN"
+                hit(690f,475f,240f,45f)->{screen="GAME";x=470f;y=285f;gemmaX=425f;gemmaY=320f;moveX=0f;moveY=0f;say("🌀 Portal aktif! Selamat datang di Hutan Sunyi.",3f);sfx(ToneGenerator.TONE_PROP_ACK)}
+                hit(30f,475f,150f,42f)->{screen="MAIN";moveX=0f;moveY=0f}
             }
             "CREATE" -> when{
                 hit(52f,158f,360f,46f)->showNameDialog()
@@ -491,7 +515,7 @@ private class ForestGameView(context: Context) : View(context) {
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
-        if(e.actionMasked==MotionEvent.ACTION_DOWN){val tx=e.getX()*960f/width;val ty=e.getY()*540f/height;if(screen!="GAME"){clickMenu(tx,ty);return true};if(tx>880f&&ty in 50f..90f){screen="PAUSE";invalidate();return true}}
+        if(e.actionMasked==MotionEvent.ACTION_DOWN){val tx=e.getX()*960f/width;val ty=e.getY()*540f/height;if(screen=="CITY"){if(tx<170f&&ty>370f){stickId=e.getPointerId(e.actionIndex);setStick(tx,ty)}else clickMenu(tx,ty);invalidate();return true};if(screen!="GAME"){clickMenu(tx,ty);return true};if(tx>880f&&ty in 50f..90f){screen="PAUSE";invalidate();return true}}
         when(e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val i=e.actionIndex; val tx=e.getX(i)*960f/width; val ty=e.getY(i)*540f/height
