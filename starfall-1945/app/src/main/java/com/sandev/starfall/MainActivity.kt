@@ -28,8 +28,12 @@ import dev.ffmpegkit.llama.LlamaModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sin
 import kotlin.random.Random
 
 class MainActivity : ComponentActivity() {
@@ -78,7 +82,7 @@ class MainActivity : ComponentActivity() {
     private fun layout(title: String, subtitle: String = ""): LinearLayout {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(20), dp(20), dp(20), dp(16)); setBackgroundColor(Color.rgb(5, 10, 26))
+            setPadding(dp(20), dp(20), dp(20), dp(16)); setBackground(android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, intArrayOf(Color.rgb(7, 20, 46), Color.rgb(5, 9, 25))).apply { cornerRadius = dp(18).toFloat(); setStroke(dp(1), Color.rgb(32, 91, 135)) })
         }
         root.addView(TextView(this).apply {
             text = title; textSize = 25f; gravity = Gravity.CENTER
@@ -92,7 +96,8 @@ class MainActivity : ComponentActivity() {
     }
     private fun button(label: String, action: () -> Unit) = Button(this).apply {
         text = label; isAllCaps = false; textSize = 14f; setTextColor(Color.WHITE)
-        backgroundTintList = ColorStateList.valueOf(Color.rgb(24, 76, 125))
+        backgroundTintList = null
+        background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.rgb(24, 91, 143), Color.rgb(25, 53, 105))).apply { cornerRadius = dp(12).toFloat(); setStroke(dp(1), Color.rgb(63, 155, 207)) }
         setOnClickListener { action() }
     }
     private fun addButton(root: LinearLayout, label: String, action: () -> Unit) {
@@ -212,7 +217,7 @@ class MainActivity : ComponentActivity() {
                 }
                 if (active == null || !active.isLoaded) callback("")
                 else {
-                    val system = "Kamu Gemma Player, pilot tempur AI dalam SANDEV Starfall 1945. Gunakan status dan riwayat battle untuk keputusan nyata, jangan mengarang kejadian. Balas hanya dua baris: ACTION: ATTACK atau DODGE atau COVER atau BOSS; SAY: komentar Indonesia singkat, alami, bervariasi, sesuai kondisi. ATTACK fokus target terdekat, DODGE menghindari ancaman dekat, COVER mendukung pilot, BOSS memprioritaskan boss."
+                    val system = "Kamu adalah Gemma, pilot wingman AI yang benar-benar ikut bertempur di SANDEV Starfall 1945. Status battle adalah fakta; jangan mengarang kejadian atau mengklaim aksi berhasil sebelum terjadi. Pilih satu aksi: ACTION: ATTACK, DODGE, COVER, BOSS, atau SKILL. ATTACK menyerang target terdekat; DODGE menghindari ancaman; COVER bergerak dekat pilot; BOSS fokus pada boss; SKILL menembakkan salvo skill bila siap. Lalu tulis SAY: satu komentar Indonesia singkat yang sesuai fakta. Kedua baris harus kamu hasilkan sendiri."
                     val readyModel = active
                     callback(withContext(Dispatchers.IO) { Llama.complete(readyModel, prompt = prompt, systemPrompt = system, maxTokens = 72).text.trim() })
                 }
@@ -284,25 +289,28 @@ private class LogoView(context: Context) : View(context) {
             p.color = if (it % 5 == 0) Color.CYAN else Color.rgb(130, 150, 190)
             c.drawCircle(r.nextFloat() * width, r.nextFloat() * height, r.nextFloat() * 2f + .5f, p)
         }
-        p.color = Color.rgb(40, 200, 255)
-        val path = Path().apply {
-            moveTo(width * .5f, height * .2f); lineTo(width * .63f, height * .54f)
-            lineTo(width * .5f, height * .46f); lineTo(width * .37f, height * .54f); close()
-        }
-        c.drawPath(path, p)
+        val scale = min(width / 220f, height / 300f).coerceAtLeast(.5f)
+        c.save(); c.translate(width * .5f, height * .45f); c.scale(scale, scale)
+        p.color = Color.argb(65, 42, 210, 255); c.drawCircle(0f, 0f, 72f, p)
+        p.color = Color.rgb(255, 176, 83); c.drawRoundRect(-15f, 28f, -7f, 52f, 4f, 4f, p); c.drawRoundRect(7f, 28f, 15f, 52f, 4f, 4f, p)
+        p.color = Color.rgb(54, 204, 255)
+        val wings = Path().apply { moveTo(0f, -58f); lineTo(18f, -20f); lineTo(61f, 23f); lineTo(49f, 38f); lineTo(16f, 24f); lineTo(9f, 47f); lineTo(-9f, 47f); lineTo(-16f, 24f); lineTo(-49f, 38f); lineTo(-61f, 23f); lineTo(-18f, -20f); close() }; c.drawPath(wings, p)
+        p.color = Color.rgb(16, 41, 77); val hull = Path().apply { moveTo(0f, -68f); lineTo(14f, -22f); lineTo(11f, 35f); lineTo(0f, 49f); lineTo(-11f, 35f); lineTo(-14f, -22f); close() }; c.drawPath(hull, p)
+        p.color = Color.WHITE; c.drawRoundRect(-5f, -43f, 5f, -13f, 5f, 5f, p); p.color = Color.rgb(100, 235, 255); c.drawRoundRect(-2f, -39f, 2f, -17f, 2f, 2f, p); c.restore()
     }
 }
 
 private class ShooterView(context: Context, private val weaponLevel: Int, private val hullLevel: Int, private val stageNumber: Int, private val shipClass: String, private val skillLevel: Int, private val askGemma: (String, (String) -> Unit) -> Unit, val onClear: (Boolean, Int, Int, Int) -> Unit) : View(context) {
     private data class Shot(var x: Float, var y: Float, var speed: Float, var damage: Int)
     private data class Enemy(var x: Float, var y: Float, var hp: Int, var speed: Float, val boss: Boolean = false)
+    private data class EnemyShot(var x: Float, var y: Float, var vx: Float, var vy: Float, val damage: Int)
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val shots = mutableListOf<Shot>(); private val enemies = mutableListOf<Enemy>()
+    private val shots = mutableListOf<Shot>(); private val enemies = mutableListOf<Enemy>(); private val enemyShots = mutableListOf<EnemyShot>()
     private val stars = List(85) { floatArrayOf(Random.nextFloat(), Random.nextFloat(), Random.nextFloat() * 2f + 1f) }
     private var px = 0f; private var py = 0f; private var wx = 0f; private var wy = 0f
     private var last = System.nanoTime(); private var elapsed = 0f
     private var fire = 0f; private var spawn = 0f; private var skill = 0f
-    private var commentTime = 0f; private var comment = ""; private var gemmaAction = "ATTACK"; private var decisionTimer = 2f; private var gemmaThinking = false; private val battleHistory = mutableListOf<String>()
+    private var commentTime = 0f; private var comment = ""; private var gemmaAction = "WAIT"; private var decisionTimer = 1f; private var gemmaThinking = false; private var bossFireTimer = 1.1f; private val battleHistory = mutableListOf<String>()
     private var defeated = 0; private var hp = 100 + hullLevel * 20 + if (shipClass == "GUARDIAN") 40 else 0; private val maxHp = 100 + hullLevel * 20 + if (shipClass == "GUARDIAN") 40 else 0; private var done = false
     private var bossSpawned = false; private var bossCleared = false
     private val target = 30
@@ -326,12 +334,14 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
         p.color = Color.rgb(182, 205, 232); p.textSize = 11f
         c.drawText(if (bossSpawned && !bossCleared) "BOSS ENGAGED" else "HOSTILES $defeated/$target", 17f, 59f, p)
         shots.forEach { p.color = if (it.damage > 1) Color.rgb(255, 205, 105) else Color.CYAN; p.strokeWidth = if (it.damage > 1) 5f else 3f; c.drawLine(it.x, it.y, it.x, it.y + 13f, p) }
+        enemyShots.forEach { shot -> p.color = Color.argb(70, 255, 66, 103); c.drawCircle(shot.x, shot.y, 11f, p); p.color = Color.rgb(255, 84, 112); c.drawCircle(shot.x, shot.y, 5f, p); p.color = Color.rgb(255, 218, 173); c.drawCircle(shot.x, shot.y, 2f, p) }
         enemies.forEach { e ->
             if (e.boss) {
-                p.color = Color.argb(75, 255, 70, 125); c.drawCircle(e.x, e.y, 42f, p)
+                p.color = Color.argb(72, 255, 50, 100); c.drawCircle(e.x, e.y, 78f, p); p.color = Color.argb(110, 255, 120, 160); c.drawCircle(e.x, e.y, 61f, p)
+                p.color = Color.rgb(111, 26, 65); c.drawRoundRect(e.x - 70f, e.y - 32f, e.x + 70f, e.y + 40f, 20f, 20f, p)
                 p.color = Color.rgb(255, 67, 111)
-                val path = Path().apply { moveTo(e.x, e.y + 35f); lineTo(e.x + 38f, e.y + 4f); lineTo(e.x + 30f, e.y - 27f); lineTo(e.x + 10f, e.y - 17f); lineTo(e.x, e.y - 38f); lineTo(e.x - 10f, e.y - 17f); lineTo(e.x - 30f, e.y - 27f); lineTo(e.x - 38f, e.y + 4f); close() }; c.drawPath(path, p)
-                p.color = Color.WHITE; c.drawCircle(e.x, e.y, 6f, p)
+                val path = Path().apply { moveTo(e.x, e.y - 62f); lineTo(e.x + 32f, e.y - 35f); lineTo(e.x + 76f, e.y - 22f); lineTo(e.x + 60f, e.y + 4f); lineTo(e.x + 78f, e.y + 32f); lineTo(e.x + 34f, e.y + 22f); lineTo(e.x + 18f, e.y + 52f); lineTo(e.x, e.y + 36f); lineTo(e.x - 18f, e.y + 52f); lineTo(e.x - 34f, e.y + 22f); lineTo(e.x - 78f, e.y + 32f); lineTo(e.x - 60f, e.y + 4f); lineTo(e.x - 76f, e.y - 22f); lineTo(e.x - 32f, e.y - 35f); close() }; c.drawPath(path, p)
+                p.color = Color.rgb(255, 178, 202); c.drawRoundRect(e.x - 50f, e.y - 13f, e.x - 30f, e.y + 28f, 6f, 6f, p); c.drawRoundRect(e.x + 30f, e.y - 13f, e.x + 50f, e.y + 28f, 6f, 6f, p); p.color = Color.rgb(255, 239, 245); c.drawCircle(e.x, e.y - 8f, 12f, p); p.color = Color.rgb(255, 48, 100); c.drawCircle(e.x, e.y - 8f, 6f, p)
                 p.color = Color.rgb(45, 16, 38); c.drawRoundRect(w * .18f, 78f, w * .82f, 86f, 5f, 5f, p)
                 p.color = Color.rgb(255, 75, 119); c.drawRoundRect(w * .18f, 78f, w * .18f + (w * .64f) * (e.hp.toFloat() / (220 + stageNumber * 35)).coerceIn(0f, 1f), 86f, 5f, 5f, p)
                 p.color = Color.WHITE; p.textSize = 11f; p.typeface = Typeface.DEFAULT_BOLD; c.drawText("DREADNOUGHT • BOSS", w * .18f, 101f, p)
@@ -342,22 +352,22 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
             }
         }
         val playerColor = when (shipClass) { "GUARDIAN" -> Color.rgb(102, 255, 176); "STRIKER" -> Color.rgb(255, 177, 83); else -> Color.rgb(65, 220, 255) }
-        ship(c, px, py, playerColor, 1f); ship(c, wx, wy, Color.rgb(195, 105, 255), .72f)
-        if (commentTime > 0 && comment.isNotBlank()) {
-            val bubbleW = min(w * .78f, max(150f, comment.length * 6.3f))
-            val bx = (wx - bubbleW * .52f).coerceIn(8f, w - bubbleW - 8f)
-            val by = (wy - 72f).coerceAtLeast(112f)
-            p.color = Color.argb(238, 23, 27, 57); c.drawRoundRect(bx, by - 36f, bx + bubbleW, by + 2f, 12f, 12f, p)
-            p.color = Color.rgb(201, 126, 255); p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f
-            c.drawRoundRect(bx, by - 36f, bx + bubbleW, by + 2f, 12f, 12f, p); p.style = Paint.Style.FILL
-            p.color = Color.rgb(235, 222, 255); p.textSize = 12f
-            c.drawText(comment.take(30), bx + 9f, by - 19f, p)
-            if (comment.length > 30) c.drawText(comment.drop(30).take(30), bx + 9f, by - 5f, p)
+        ship(c, px, py, playerColor, 1.55f, false); ship(c, wx, wy, Color.rgb(195, 105, 255), 1.38f, true)
+        if (commentTime > 0f && comment.isNotBlank()) {
+            p.textSize = 16f; p.typeface = Typeface.DEFAULT_BOLD
+            val lines = comment.replace(Regex("\\s+"), " ").chunked(30).take(3)
+            val textWidth = lines.maxOfOrNull { p.measureText(it) } ?: 0f
+            val bubbleW = min(w * .88f, max(190f, textWidth + 28f)); val bubbleH = 24f + lines.size * 21f
+            val bx = (wx - bubbleW * .52f).coerceIn(8f, max(8f, w - bubbleW - 8f)); val by = (wy - 105f).coerceAtLeast(150f)
+            p.color = Color.argb(242, 17, 21, 47); c.drawRoundRect(bx, by - bubbleH, bx + bubbleW, by + 5f, 17f, 17f, p)
+            p.color = Color.rgb(201, 126, 255); p.style = Paint.Style.STROKE; p.strokeWidth = 2f; c.drawRoundRect(bx, by - bubbleH, bx + bubbleW, by + 5f, 17f, 17f, p); p.style = Paint.Style.FILL
+            p.color = Color.rgb(235, 222, 255); p.textSize = 16f; p.typeface = Typeface.DEFAULT_BOLD
+            lines.forEachIndexed { i, line -> c.drawText(line, bx + 14f, by - bubbleH + 25f + i * 21f, p) }
         }
         if (!done) postInvalidateDelayed(16)
     }
     private fun update(dt: Float, w: Float, h: Float) {
-        elapsed += dt; fire -= dt; spawn -= dt; skill -= dt; commentTime -= dt; decisionTimer -= dt
+        elapsed += dt; fire -= dt; spawn -= dt; skill -= dt; commentTime -= dt; decisionTimer -= dt; bossFireTimer -= dt
         val danger = enemies.firstOrNull { kotlin.math.abs(it.x - wx) < 52f && it.y > wy - 115f && !it.boss }
         val targetEnemy = if (gemmaAction == "BOSS") enemies.firstOrNull { it.boss }
             else enemies.minByOrNull { kotlin.math.abs(it.x - wx) + kotlin.math.abs(it.y - wy) * .55f }
@@ -368,13 +378,12 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
             askGemma(state) { raw ->
                 gemmaThinking = false
                 if (raw.isNotBlank()) {
-                    val action = Regex("(?im)^\\s*ACTION\\s*:\\s*(ATTACK|DODGE|COVER|BOSS)").find(raw)?.groupValues?.get(1)?.uppercase()
+                    val action = Regex("(?im)^\\s*ACTION\\s*:\\s*(ATTACK|DODGE|COVER|BOSS|SKILL)\\s*$").find(raw)?.groupValues?.get(1)?.uppercase()
                     if (action != null) gemmaAction = action
                     val say = Regex("(?im)^\\s*SAY\\s*:\\s*(.+)$").find(raw)?.groupValues?.get(1)?.trim()
-                        ?: raw.lines().filterNot { it.trim().startsWith("ACTION:", true) }.joinToString(" ").trim()
-                    if (say.isNotBlank()) { comment = say.take(58); commentTime = 4.5f; battleHistory.add(gemmaAction + ": " + comment); if (battleHistory.size > 12) battleHistory.removeAt(0) }
+                    if (say != null && say.isNotBlank()) { comment = say.take(58); commentTime = 4.5f; battleHistory.add(gemmaAction + ": " + comment); if (battleHistory.size > 12) battleHistory.removeAt(0) }
                 } else if (comment.isBlank()) {
-                    comment = "Import GGUF di menu Gemma untuk mengaktifkan AI"; commentTime = 5f
+                    comment = ""; commentTime = 0f
                 }
                 postInvalidateOnAnimation()
             }
@@ -382,15 +391,15 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
         val desiredX = when (gemmaAction) {
             "COVER" -> px - w * .14f
             "DODGE" -> if (danger != null) wx + if (danger.x < wx) w * .18f else -w * .18f else targetEnemy?.x ?: (px - w * .14f)
-            else -> targetEnemy?.x ?: (px - w * .18f)
+            else -> if (gemmaAction == "WAIT") wx else (targetEnemy?.x ?: (px - w * .18f))
         }
         wx += (desiredX.coerceIn(w * .12f, w * .88f) - wx) * min(1f, dt * 2.8f)
-        val desiredY = if (gemmaAction == "DODGE" || danger != null) h * .59f else h * .76f
+        val desiredY = if (gemmaAction == "WAIT") wy else if (gemmaAction == "DODGE" || danger != null) h * .59f else h * .76f
         wy += (desiredY - wy) * min(1f, dt * 1.8f)
         wx = wx.coerceIn(24f, w - 24f); wy = wy.coerceIn(h * .48f, h - 35f)
-        if (fire <= 0f) { val damage = 1 + weaponLevel / 2 + if (shipClass == "STRIKER") 1 else 0; shots.add(Shot(px, py - 22f, -610f, damage)); shots.add(Shot(wx, wy - 15f, -560f, damage)); fire = if (shipClass == "STRIKER") .18f else .24f }
-        if (skill <= 0f) {
-            val priorityTarget = if (gemmaAction == "BOSS") enemies.firstOrNull { it.boss } else targetEnemy
+        if (fire <= 0f) { val damage = 1 + weaponLevel / 2 + if (shipClass == "STRIKER") 1 else 0; shots.add(Shot(px, py - 22f, -610f, damage)); if (gemmaAction != "WAIT") shots.add(Shot(wx, wy - 15f, -560f, damage)); fire = if (shipClass == "STRIKER") .18f else .24f }
+        if (skill <= 0f && gemmaAction == "SKILL") {
+            val priorityTarget = if (gemmaAction == "BOSS" || gemmaAction == "SKILL") enemies.firstOrNull { it.boss } ?: targetEnemy else targetEnemy
             val burstX = priorityTarget?.x ?: wx
             repeat(2 + skillLevel.coerceAtMost(5)) { i ->
                 val spread = (i - ((1 + skillLevel.coerceAtMost(5)) / 2)) * 14f
@@ -409,15 +418,36 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
             battleHistory.add("Dreadnought boss muncul setelah " + defeated + " kills."); decisionTimer = 0f
         }
         enemies.forEach { e ->
-            if (e.boss) { e.x = (w * .5f + kotlin.math.sin(elapsed * .9f) * w * .28f).coerceIn(w * .2f, w * .8f) }
-            else { e.y += e.speed * dt; if (e.y > h + 20f) { e.hp = 0; hp = max(0, hp - 5); battleHistory.add("Musuh lolos; hull turun 5.") } }
+            if (e.boss) {
+                e.x = (w * .5f + sin(elapsed * .62f) * w * .21f).coerceIn(w * .25f, w * .75f)
+                if (bossFireTimer <= 0f) {
+                    val phaseTwo = e.hp < (220 + stageNumber * 35) * .48f
+                    val count = if (phaseTwo) 7 else 3
+                    val base = atan2(py - e.y, px - e.x)
+                    val speed = if (phaseTwo) 255f else 210f
+                    for (i in 0 until count) {
+                        val angle = base + (i - (count - 1) / 2f) * if (phaseTwo) .19f else .24f
+                        enemyShots.add(EnemyShot(e.x, e.y + 44f, cos(angle) * speed, sin(angle) * speed, if (phaseTwo) 13 else 9))
+                    }
+                    bossFireTimer = if (phaseTwo) .78f else 1.28f
+                    battleHistory.add(if (phaseTwo) "Boss melepas salvo fase dua" else "Boss menembak ke arah pilot")
+                }
+            } else { e.y += e.speed * dt; if (e.y > h + 20f) { e.hp = 0; hp = max(0, hp - 5); battleHistory.add("Musuh lolos; hull turun 5.") } }
         }
         shots.forEach { it.y += it.speed * dt }
+        enemyShots.forEach { it.x += it.vx * dt; it.y += it.vy * dt }
+        enemyShots.removeAll { it.x < -20f || it.x > w + 20f || it.y < -20f || it.y > h + 20f }
+        val bulletHits = enemyShots.filter { abs(it.x - px) < 27f && abs(it.y - py) < 31f }
+        if (bulletHits.isNotEmpty()) {
+            hp = max(0, hp - bulletHits.sumOf { it.damage })
+            enemyShots.removeAll(bulletHits.toSet())
+            battleHistory.add("Peluru musuh mengenai pesawat pemain")
+        }
         shots.removeAll { it.y < -30f }
         val hit = mutableSetOf<Shot>(); val dead = mutableSetOf<Enemy>()
         enemies.forEach { e -> shots.forEach { shot ->
-            val hitRadius = if (e.boss) 48f else 28f
-            if (kotlin.math.abs(shot.x - e.x) < hitRadius && kotlin.math.abs(shot.y - e.y) < if (e.boss) 44f else 30f) {
+            val hitRadius = if (e.boss) 78f else 28f
+            if (abs(shot.x - e.x) < hitRadius && abs(shot.y - e.y) < if (e.boss) 58f else 30f) {
                 e.hp -= shot.damage; hit.add(shot)
                 if (e.hp <= 0) { dead.add(e); if (e.boss) { bossCleared = true; battleHistory.add("Dreadnought boss dikalahkan."); decisionTimer = 0f } else { defeated++; if (defeated % 5 == 0) battleHistory.add("Total kills: " + defeated) } }
             }
@@ -426,12 +456,12 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
         if (hp <= 0) { done = true; onClear(false, max(10, defeated * 5), max(15, defeated * 4), defeated + if (bossCleared) 1 else 0) }
         else if (defeated >= target && bossCleared && enemies.isEmpty()) { done = true; onClear(true, 180 + stageNumber * 12 + defeated * 6, 150 + stageNumber * 8 + defeated * 5, defeated + 1) }
     }
-    private fun ship(c: Canvas, x: Float, y: Float, color: Int, scale: Float) {
+    private fun ship(c: Canvas, x: Float, y: Float, color: Int, scale: Float, wingman: Boolean) {
         c.save(); c.translate(x, y); c.scale(scale, scale)
         p.color = Color.argb(100, Color.red(color), Color.green(color), Color.blue(color)); c.drawCircle(0f, 0f, 25f, p)
         p.color = color
-        val path = Path().apply { moveTo(0f, -26f); lineTo(19f, 16f); lineTo(0f, 9f); lineTo(-19f, 16f); close() }
-        c.drawPath(path, p); p.color = Color.WHITE; c.drawCircle(0f, -5f, 4f, p); c.restore()
+        val wings = Path().apply { moveTo(0f, -38f); lineTo(14f, -14f); lineTo(42f, 13f); lineTo(38f, 25f); lineTo(13f, 16f); lineTo(8f, 31f); lineTo(-8f, 31f); lineTo(-13f, 16f); lineTo(-38f, 25f); lineTo(-42f, 13f); lineTo(-14f, -14f); close() }; c.drawPath(wings, p)
+        p.color = Color.rgb(18, 33, 64); val hull = Path().apply { moveTo(0f, -48f); lineTo(12f, -15f); lineTo(10f, 22f); lineTo(0f, 34f); lineTo(-10f, 22f); lineTo(-12f, -15f); close() }; c.drawPath(hull, p); if (wingman) { p.color = Color.rgb(248, 220, 255); c.drawCircle(0f, -1f, 6f, p); p.color = Color.rgb(170, 75, 255); c.drawCircle(0f, -1f, 3f, p) } else { p.color = Color.WHITE; c.drawCircle(0f, -5f, 4f, p) }; c.restore()
     }
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (e.action == MotionEvent.ACTION_DOWN || e.action == MotionEvent.ACTION_MOVE) {
