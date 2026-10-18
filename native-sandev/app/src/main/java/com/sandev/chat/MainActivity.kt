@@ -71,14 +71,14 @@ class MainActivity : AppCompatActivity() {
     private var activeBotId = "default"
     private var activeModelName: String? = null
     private var activeTuneId = "default"
-    private var manualTune = SamplingTune("manual", "Manual", 0.7f, 0.9f, 40, 1.1f)
+    private var manualTune = SamplingTune("manual", "Manual", 0.7f, 0.9f, 40, 1.1f, 192)
     private val samplingPresets = listOf(
-        SamplingTune("qwen", "Qwen Tune", 0.7f, 0.8f, 20, 1.05f),
-        SamplingTune("gemma", "Gemma Tune", 1.0f, 0.95f, 64, 1.05f),
-        SamplingTune("smollm", "SmolLM Tune", 0.7f, 0.9f, 50, 1.15f),
-        SamplingTune("luminus", "Luminus Tune", 0.85f, 0.9f, 40, 1.10f),
-        SamplingTune("other", "Other Model Tune", 0.75f, 0.9f, 40, 1.10f),
-        SamplingTune("default", "Default", 0.3f, 0.95f, 40, 1.0f)
+        SamplingTune("qwen", "Qwen Tune", 0.7f, 0.8f, 20, 1.05f, 256),
+        SamplingTune("gemma", "Gemma Tune", 1.0f, 0.95f, 64, 1.05f, 192),
+        SamplingTune("smollm", "SmolLM Tune", 0.7f, 0.9f, 50, 1.15f, 160),
+        SamplingTune("luminus", "Luminus Tune", 0.85f, 0.9f, 40, 1.10f, 320),
+        SamplingTune("other", "Other Model Tune", 0.75f, 0.9f, 40, 1.10f, 192),
+        SamplingTune("default", "Default", 0.3f, 0.95f, 40, 1.0f, 320)
     )
     private var pendingModelFile: File? = null
     private var themeIndex = 0
@@ -1241,9 +1241,9 @@ class MainActivity : AppCompatActivity() {
     private fun showModelTuneMenu() {
         val options = samplingPresets.map { tune ->
             val selected = if (activeTuneId == tune.id) "✓" else " "
-            "$selected  ${tune.label}  ·  T=${tune.temperature}  P=${tune.topP}  K=${tune.topK}  R=${tune.repeatPenalty}"
+            "$selected  ${tune.label}  ·  N=${tune.maxTokens}  T=${tune.temperature}  P=${tune.topP}  K=${tune.topK}  R=${tune.repeatPenalty}"
         }.toMutableList()
-        options.add(if (activeTuneId == "manual") "✓  Manual · ${manualTune.temperature}/${manualTune.topP}/${manualTune.topK}/${manualTune.repeatPenalty}" else "✎  Manual · atur sendiri")
+        options.add(if (activeTuneId == "manual") "✓  Manual · N=${manualTune.maxTokens} / T=${manualTune.temperature} / P=${manualTune.topP} / K=${manualTune.topK} / R=${manualTune.repeatPenalty}" else "✎  Manual · atur sendiri")
         AlertDialog.Builder(this)
             .setTitle("Model Tune")
             .setMessage("Pilih Tune yang ingin dipakai. Tune tidak berubah otomatis saat model diganti.")
@@ -1282,6 +1282,7 @@ class MainActivity : AppCompatActivity() {
         val topP = addField("Top-p (0.10–1.0)", initial.topP.toString(), decimal)
         val topK = addField("Top-k (1–200)", initial.topK.toString(), InputType.TYPE_CLASS_NUMBER)
         val repeat = addField("Repetition penalty (1.0–2.0)", initial.repeatPenalty.toString(), decimal)
+        val maxTokens = addField("Max output tokens (32–1024)", initial.maxTokens.toString(), InputType.TYPE_CLASS_NUMBER)
         val dialog = AlertDialog.Builder(this)
             .setTitle("Manual Tune")
             .setMessage("Atur cara model memilih token. Nilai ini berlaku untuk model yang sedang dimuat.")
@@ -1296,11 +1297,13 @@ class MainActivity : AppCompatActivity() {
                     val topPValue = topP.text.toString().toFloat()
                     val topKValue = topK.text.toString().toInt()
                     val repeatValue = repeat.text.toString().toFloat()
+                    val maxTokensValue = maxTokens.text.toString().toInt()
+                    require(maxTokensValue in 32..1024) { "Max output tokens harus 32–1024." }
                     require(tempValue in 0.05f..2.0f) { "Temperature harus 0.05–2.0." }
                     require(topPValue in 0.10f..1.0f) { "Top-p harus 0.10–1.0." }
                     require(topKValue in 1..200) { "Top-k harus 1–200." }
                     require(repeatValue in 1.0f..2.0f) { "Repetition penalty harus 1.0–2.0." }
-                    val tune = SamplingTune("manual", "Manual", tempValue, topPValue, topKValue, repeatValue)
+                    val tune = SamplingTune("manual", "Manual", tempValue, topPValue, topKValue, repeatValue, maxTokensValue)
                     manualTune = tune
                     applySamplingTune(tune, "manual")
                     dialog.dismiss()
@@ -1327,6 +1330,7 @@ class MainActivity : AppCompatActivity() {
             .putFloat(KEY_MANUAL_TOP_P, manualTune.topP)
             .putInt(KEY_MANUAL_TOP_K, manualTune.topK)
             .putFloat(KEY_MANUAL_REPEAT_PENALTY, manualTune.repeatPenalty)
+            .putInt(KEY_MANUAL_MAX_TOKENS, manualTune.maxTokens)
         editor.apply()
         if (::engine.isInitialized && engineReady && engine.state.value is InferenceEngine.State.ModelReady) {
             lifecycleScope.launch(Dispatchers.IO) {
@@ -1868,7 +1872,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startAssistantGeneration(prompt: String, assistant: ChatMessage) {
-        val predictLength = automaticPredictLength(prompt)
+        val predictLength = minOf(automaticPredictLength(prompt), activeSamplingTune().maxTokens)
         currentAssistantView = (chatColumn.getChildAt(chatColumn.childCount - 1) as? LinearLayout)?.getChildAt(0) as? TextView
         input.isEnabled = false
         sendButton.isEnabled = false
@@ -2209,7 +2213,8 @@ class MainActivity : AppCompatActivity() {
             prefs().getFloat(KEY_MANUAL_TEMPERATURE, 0.7f),
             prefs().getFloat(KEY_MANUAL_TOP_P, 0.9f),
             prefs().getInt(KEY_MANUAL_TOP_K, 40),
-            prefs().getFloat(KEY_MANUAL_REPEAT_PENALTY, 1.1f)
+            prefs().getFloat(KEY_MANUAL_REPEAT_PENALTY, 1.1f),
+            prefs().getInt(KEY_MANUAL_MAX_TOKENS, 192)
         )
         activeBotId = prefs().getString(KEY_ACTIVE_BOT, "default") ?: "default"
         profilePath = prefs().getString(KEY_PROFILE, null)
@@ -2463,7 +2468,8 @@ class MainActivity : AppCompatActivity() {
         val temperature: Float,
         val topP: Float,
         val topK: Int,
-        val repeatPenalty: Float
+        val repeatPenalty: Float,
+        val maxTokens: Int
     )
     private data class ChatMessage(val role: String, var text: String)
     private data class BlackjackChatMessage(val fromUser: Boolean, val text: String)
@@ -2488,6 +2494,7 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_MANUAL_TOP_P = "manual_tune_top_p"
         private const val KEY_MANUAL_TOP_K = "manual_tune_top_k"
         private const val KEY_MANUAL_REPEAT_PENALTY = "manual_tune_repeat_penalty"
+        private const val KEY_MANUAL_MAX_TOKENS = "manual_tune_max_tokens"
         private const val KEY_AUTO_LOAD_MODEL = "auto_load_model"
         private const val KEY_ACTIVE_BOT = "active_bot"
         private const val KEY_THEME = "theme"
