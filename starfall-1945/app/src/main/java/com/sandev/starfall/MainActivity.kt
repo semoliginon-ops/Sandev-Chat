@@ -312,6 +312,7 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
     private var shieldTimer = 0f; private var targetLockTimer = 0f; private var coverFireTimer = 0f; private var evadeTimer = 0f
     private var flashTimer = 0f; private var gemmaSkillCooldown = 0f
     private var bombCooldown = 5f; private var bombEffectTimer = 0f; private var bombX = 0f; private var bombY = 0f; private var bombRadius = 64f
+    private var gemmaAutoSkillCooldown = 5f
     private var commentTime = 0f; private var comment = ""; private var gemmaAction = "ATTACK"; private var decisionTimer = .35f; private var gemmaThinking = false; private var bossFireTimer = 1.1f
     private var secondsWithoutValidDecision = 0f; private var systemTakeover = false; private var autoPilotTimer = 0f
     private val battleHistory = mutableListOf<String>()
@@ -408,6 +409,7 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
         shieldTimer = max(0f, shieldTimer - dt); targetLockTimer = max(0f, targetLockTimer - dt)
         coverFireTimer = max(0f, coverFireTimer - dt); evadeTimer = max(0f, evadeTimer - dt); flashTimer = max(0f, flashTimer - dt)
         gemmaSkillCooldown = max(0f, gemmaSkillCooldown - dt)
+        gemmaAutoSkillCooldown -= dt
         bombEffectTimer = max(0f, bombEffectTimer - dt)
         bombCooldown -= dt
         if (bombCooldown <= 0f && enemies.isNotEmpty()) {
@@ -423,6 +425,16 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
         val danger = enemies.firstOrNull { kotlin.math.abs(it.x - wx) < 72f && it.y > wy - 145f && !it.boss }
         val targetEnemy = if (gemmaAction == "BOSS") enemies.firstOrNull { it.boss }
             else enemies.minByOrNull { kotlin.math.abs(it.x - wx) + kotlin.math.abs(it.y - wy) * .55f }
+        if (gemmaAutoSkillCooldown <= 0f && enemies.isNotEmpty()) {
+            val targetX = targetEnemy?.x ?: wx
+            repeat(3) { i ->
+                val spread = (i - 1) * 14f
+                shots.add(Shot(wx + spread + (targetX - wx) * .08f, wy - 20f, -590f, 3 + weaponLevel / 2))
+            }
+            gemmaAutoSkillCooldown = 5f
+            if (!systemTakeover && commentTime <= 0f) { comment = "Gemma: COVER FIRE!"; commentTime = 2.4f }
+            battleHistory.add("Gemma auto Cover Fire.")
+        }
         if (decisionTimer <= 0f && !gemmaThinking) {
             gemmaThinking = true; decisionTimer = 4.2f
             val nearest = targetEnemy?.let { if (it.boss) "DREADNOUGHT boss HP " + it.hp else "enemy HP " + it.hp + ", x=" + it.x.toInt() + ", y=" + it.y.toInt() } ?: "tidak ada target dekat"
