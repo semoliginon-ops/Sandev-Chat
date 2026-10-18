@@ -127,7 +127,7 @@ class GemmaWingmanActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), dp(12), dp(10), dp(12))
         }
-        scroll.addView(transcript, ScrollView.LayoutParams(-1, -2))
+        scroll.addView(transcript, android.widget.FrameLayout.LayoutParams(-1, -2))
         root.addView(scroll)
         input = EditText(this).apply {
             hint = "Ngobrol dengan Gemma..."

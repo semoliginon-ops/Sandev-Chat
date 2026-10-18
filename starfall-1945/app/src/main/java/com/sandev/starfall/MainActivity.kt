@@ -1,6 +1,6 @@
 package com.sandev.starfall
 
-import android.app.Activity
+import androidx.activity.ComponentActivity
 import android.os.Bundle
 import android.content.Context
 import android.content.Intent
@@ -32,7 +32,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.random.Random
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
     private lateinit var prefs: SharedPreferences
     private var pilot = ""
     private var level = 1
