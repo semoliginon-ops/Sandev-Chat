@@ -528,13 +528,13 @@ private class ForestGameView(context: Context) : View(context) {
                 hit(52f,274f,170f,43f)->screen="CHARACTER";hit(242f,274f,170f,43f)->screen="INVENTORY"
                 hit(52f,328f,170f,43f)->screen="SKILLS";hit(242f,328f,170f,43f)->screen="EQUIPMENT"
                 hit(52f,382f,170f,43f)->screen="QUESTS";hit(242f,382f,170f,43f)->screen="SETTINGS"
-                hit(520f,300f,280f,48f)->{screen="CITY";x=745f;y=385f;gemmaX=700f;gemmaY=410f;moveX=0f;moveY=0f;cityMessage="Selamat datang di Asterfall!";sfx(ToneGenerator.TONE_PROP_ACK)}
+                hit(520f,300f,280f,48f)->{screen="CITY";x=745f;y=385f;gemmaX=700f;gemmaY=410f;moveX=0f;moveY=0f;cityMessage="Selamat datang di Asterfall!";sfx("door", ToneGenerator.TONE_PROP_ACK)}
             }
             "CITY" -> when {
                 hit(30f,420f,150f,42f)->{cityMessage="Warga: Monster makin agresif di dalam hutan. Siapkan ramuan!";say(cityMessage,3f)}
                 hit(190f,420f,150f,42f)->{cityMessage="Pedagang: Ramuan dan bahan kerajinan akan tersedia di update berikutnya.";say(cityMessage,3f)}
                 hit(350f,420f,180f,42f)->{cityMessage="Pandai besi: Upgrade senjata dan armor bisa kamu beli dari menu Equipment.";screen="EQUIPMENT"}
-                hit(690f,475f,240f,45f)->{screen="GAME";x=470f;y=285f;gemmaX=425f;gemmaY=320f;moveX=0f;moveY=0f;say("🌀 Portal aktif! Selamat datang di Hutan Sunyi.",3f);sfx(ToneGenerator.TONE_PROP_ACK)}
+                hit(690f,475f,240f,45f)->{screen="GAME";x=470f;y=285f;gemmaX=425f;gemmaY=320f;moveX=0f;moveY=0f;say("🌀 Portal aktif! Selamat datang di Hutan Sunyi.",3f);sfx("door", ToneGenerator.TONE_PROP_ACK)}
                 hit(30f,475f,150f,42f)->{screen="MAIN";moveX=0f;moveY=0f}
             }
             "CREATE" -> when{
