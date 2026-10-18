@@ -20,6 +20,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import java.io.File
 import androidx.lifecycle.lifecycleScope
 import dev.ffmpegkit.llama.Llama
 import dev.ffmpegkit.llama.LlamaConfig
