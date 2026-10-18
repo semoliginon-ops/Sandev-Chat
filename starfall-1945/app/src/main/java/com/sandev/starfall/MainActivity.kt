@@ -168,9 +168,13 @@ class MainActivity : Activity() {
     }
     private fun battle() {
         page = "battle"
-        setContentView(ShooterView(this) { xpGain, creditGain, count ->
-            reward(xpGain, creditGain); kills += count; stage++; save()
-            info("STAGE CLEAR", "Stage completed!\nDefeated: $count\nEXP +$xpGain\nCredits +$creditGain\nLevel $level / 1000")
+        setContentView(ShooterView(this, weapon, hull, stage) { won, xpGain, creditGain, count ->
+            reward(xpGain, creditGain); kills += count
+            if (won) stage++
+            save()
+            val title = if (won) "STAGE CLEAR" else "SHIP DISABLED"
+            val outcome = if (won) "Stage completed! Next stage: $stage" else "Mission failed. Stage $stage remains unlocked."
+            info(title, "$outcome\nDefeated: $count\nEXP +$xpGain\nCredits +$creditGain\nLevel $level / 1000")
         })
     }
     override fun onBackPressed() { if (page == "home") super.onBackPressed() else showMenu() }
@@ -193,7 +197,7 @@ private class LogoView(context: Context) : View(context) {
     }
 }
 
-private class ShooterView(context: Context, val onClear: (Int, Int, Int) -> Unit) : View(context) {
+private class ShooterView(context: Context, private val weaponLevel: Int, private val hullLevel: Int, private val stageNumber: Int, val onClear: (Boolean, Int, Int, Int) -> Unit) : View(context) {
     private data class Shot(var x: Float, var y: Float, var speed: Float, var damage: Int)
     private data class Enemy(var x: Float, var y: Float, var hp: Int, var speed: Float)
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -203,8 +207,8 @@ private class ShooterView(context: Context, val onClear: (Int, Int, Int) -> Unit
     private var last = System.nanoTime(); private var elapsed = 0f
     private var fire = 0f; private var spawn = 0f; private var skill = 0f
     private var commentTime = 3f; private var comment = "Gemma: Aku di sisimu! Ayo maju!"
-    private var defeated = 0; private var hp = 100; private var done = false
-    private val target = 30
+    private var defeated = 0; private var hp = 100 + hullLevel * 20; private var done = false
+    private val target = min(60, 24 + stageNumber / 3)
     override fun onDraw(c: Canvas) {
         super.onDraw(c)
         val w = width.toFloat(); val h = height.toFloat()
@@ -218,7 +222,7 @@ private class ShooterView(context: Context, val onClear: (Int, Int, Int) -> Unit
         }
         p.color = Color.rgb(20, 44, 76); c.drawRect(0f, 0f, w, 76f, p)
         p.color = Color.WHITE; p.textSize = 15f; p.typeface = Typeface.DEFAULT_BOLD
-        c.drawText("STAGE • HULL $hp%", 14f, 26f, p); c.drawText("ENEMIES $defeated/$target", 14f, 50f, p)
+        c.drawText("STAGE $stageNumber • HULL $hp%", 14f, 26f, p); c.drawText("ENEMIES $defeated/$target", 14f, 50f, p)
         shots.forEach { p.color = Color.CYAN; p.strokeWidth = if (it.damage > 1) 5f else 3f; c.drawLine(it.x, it.y, it.x, it.y + 13f, p) }
         enemies.forEach { e ->
             p.color = Color.rgb(255, 70, 100)
@@ -234,14 +238,14 @@ private class ShooterView(context: Context, val onClear: (Int, Int, Int) -> Unit
     }
     private fun update(dt: Float, w: Float, h: Float) {
         elapsed += dt; fire -= dt; spawn -= dt; skill -= dt; commentTime -= dt
-        if (fire <= 0f) { shots.add(Shot(px, py - 22f, -610f, 1)); shots.add(Shot(wx, wy - 15f, -560f, 1)); fire = .24f }
+        if (fire <= 0f) { val damage = 1 + weaponLevel / 2; shots.add(Shot(px, py - 22f, -610f, damage)); shots.add(Shot(wx, wy - 15f, -560f, damage)); fire = .24f }
         if (skill <= 0f) {
             repeat(3) { i -> shots.add(Shot(wx + (i - 1) * 17f, wy - 18f, -650f, 2)) }
             comment = listOf("Gemma: Aku kunci target!", "Gemma: Cover fire, sekarang!", "Gemma: Serangan gabungan!", "Gemma: Awas, musuh di depan!").random()
             commentTime = 2.3f; skill = 5f
         }
         if (spawn <= 0f && enemies.size < 9 && defeated < target) {
-            enemies.add(Enemy(Random.nextFloat() * w * .76f + w * .12f, -24f, if (defeated > 15) 3 else 2, 130f + Random.nextFloat() * 90f))
+            enemies.add(Enemy(Random.nextFloat() * w * .76f + w * .12f, -24f, (2 + stageNumber / 4 + weaponLevel / 3).coerceAtMost(12), 130f + stageNumber * 2f + Random.nextFloat() * 90f))
             spawn = max(.36f, .9f - defeated * .012f)
         }
         shots.forEach { it.y += it.speed * dt }
@@ -254,8 +258,8 @@ private class ShooterView(context: Context, val onClear: (Int, Int, Int) -> Unit
             }
         } }
         shots.removeAll(hit); enemies.removeAll(dead); enemies.removeAll { it.hp <= 0 }
-        if (hp <= 0) { done = true; onClear(max(15, defeated * 8), max(25, defeated * 6), defeated) }
-        else if (defeated >= target && enemies.isEmpty()) { done = true; onClear(250 + defeated * 10, 180 + defeated * 8, defeated) }
+        if (hp <= 0) { done = true; onClear(false, max(10, defeated * 5), max(15, defeated * 4), defeated) }
+        else if (defeated >= target && enemies.isEmpty()) { done = true; onClear(true, 120 + stageNumber * 8 + defeated * 5, 100 + stageNumber * 6 + defeated * 4, defeated) }
     }
     private fun ship(c: Canvas, x: Float, y: Float, color: Int, scale: Float) {
         c.save(); c.translate(x, y); c.scale(scale, scale)
