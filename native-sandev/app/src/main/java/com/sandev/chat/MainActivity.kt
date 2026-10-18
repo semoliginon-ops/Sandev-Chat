@@ -407,6 +407,7 @@ class MainActivity : AppCompatActivity() {
             "discover" -> renderDiscover()
             "chats" -> renderChatHistory()
             "conversation" -> { header.text = activeBot().name; renderMessages() }
+            "model_tune" -> renderModelTunePage()
             "music" -> renderMusicPage()
             "blackjack" -> renderBlackjackPage()
             "create_bot" -> renderCreateBotPage()
@@ -1240,22 +1241,117 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showModelTuneMenu() {
-        val options = samplingPresets.map { tune ->
-            val selected = if (activeTuneId == tune.id) "✓" else " "
-            "$selected  ${tune.label}  ·  N=${tune.maxTokens}  T=${tune.temperature}  P=${tune.topP}  K=${tune.topK}  R=${tune.repeatPenalty}"
-        }.toMutableList()
-        options.add(if (activeTuneId == "manual") "✓  Manual · N=${manualTune.maxTokens} / T=${manualTune.temperature} / P=${manualTune.topP} / K=${manualTune.topK} / R=${manualTune.repeatPenalty}" else "✎  Manual · atur sendiri")
-        AlertDialog.Builder(this)
-            .setTitle("Model Tune")
-            .setMessage("Pilih Tune yang ingin dipakai. Tune tidak berubah otomatis saat model diganti.")
-            .setItems(options.toTypedArray()) { _, which ->
-                if (which == samplingPresets.size) {
-                    showManualTuneDialog()
-                } else {
-                    applySamplingTune(samplingPresets[which], samplingPresets[which].id)
+        // Use a full in-app page instead of a compact dialog so every preset is
+        // visibly listed on small screens and never hidden behind a truncated menu.
+        currentPage = "model_tune"
+        renderPage()
+    }
+
+    private fun renderModelTunePage() {
+        header.text = "Model Tune"
+        val p = palettes[themeIndex]
+        addSectionTitle(
+            "Pengaturan Model Tune",
+            "Pilih sendiri preset yang ingin dipakai. Semua pilihan ditampilkan di halaman ini."
+        )
+
+        val descriptions = mapOf(
+            "qwen" to "Preset untuk model Qwen.",
+            "gemma" to "Preset untuk model Gemma.",
+            "smollm" to "Preset untuk model SmolLM.",
+            "luminus" to "Preset Luminus.",
+            "other" to "Preset umum untuk model lain.",
+            "default" to "Pengaturan standar bawaan."
+        )
+
+        samplingPresets.forEach { tune ->
+            val selected = activeTuneId == tune.id
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+                background = panelBackground(p.panel, if (selected) p.accent else p.muted, 16)
+                isClickable = true
+                isFocusable = true
+                contentDescription = "${tune.label}${if (selected) ", sedang aktif" else ""}"
+                setOnClickListener {
+                    applySamplingTune(tune, tune.id)
+                    renderPage()
                 }
             }
-            .show()
+            card.addView(TextView(this).apply {
+                text = (if (selected) "✓  " else "") + tune.label
+                textSize = 16f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(if (selected) p.accent else p.text)
+            })
+            card.addView(TextView(this).apply {
+                text = descriptions[tune.id] ?: "Preset sampling model."
+                textSize = 12f
+                setTextColor(p.muted)
+                setPadding(0, dp(3), 0, dp(5))
+            })
+            card.addView(TextView(this).apply {
+                text = "Temperature ${tune.temperature}  ·  Top-P ${tune.topP}  ·  Top-K ${tune.topK}"
+                textSize = 12f
+                setTextColor(p.text)
+            })
+            card.addView(TextView(this).apply {
+                text = "Repetition Penalty ${tune.repeatPenalty}  ·  Max Tokens ${tune.maxTokens}"
+                textSize = 12f
+                setTextColor(p.text)
+                setPadding(0, dp(2), 0, 0)
+            })
+            chatColumn.addView(card, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) })
+        }
+
+        val manualSelected = activeTuneId == "manual"
+        val manualCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = panelBackground(p.panel, if (manualSelected) p.accent else p.muted, 16)
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Manual Settings, atur parameter sendiri"
+            setOnClickListener { showManualTuneDialog() }
+        }
+        manualCard.addView(TextView(this).apply {
+            text = (if (manualSelected) "✓  " else "✎  ") + "Manual Settings"
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(if (manualSelected) p.accent else p.text)
+        })
+        manualCard.addView(TextView(this).apply {
+            text = "Atur Temperature, Top-P, Top-K, Repetition Penalty, dan Max Tokens sendiri."
+            textSize = 12f
+            setTextColor(p.muted)
+            setPadding(0, dp(3), 0, dp(5))
+        })
+        if (manualSelected) {
+            manualCard.addView(TextView(this).apply {
+                text = "Temperature ${manualTune.temperature}  ·  Top-P ${manualTune.topP}  ·  Top-K ${manualTune.topK}"
+                textSize = 12f
+                setTextColor(p.text)
+            })
+            manualCard.addView(TextView(this).apply {
+                text = "Repetition Penalty ${manualTune.repeatPenalty}  ·  Max Tokens ${manualTune.maxTokens}"
+                textSize = 12f
+                setTextColor(p.text)
+                setPadding(0, dp(2), 0, 0)
+            })
+        }
+        chatColumn.addView(manualCard, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = dp(12) })
+
+        val note = TextView(this).apply {
+            text = "Preset yang dipilih disimpan. Parameter sampling diterapkan saat model siap; Max Tokens membatasi panjang jawaban."
+            textSize = 12f
+            setTextColor(p.muted)
+            setPadding(dp(4), dp(2), dp(4), dp(12))
+        }
+        chatColumn.addView(note)
     }
 
     private fun showManualTuneDialog() {
@@ -1308,6 +1404,7 @@ class MainActivity : AppCompatActivity() {
                     manualTune = tune
                     applySamplingTune(tune, "manual")
                     dialog.dismiss()
+                    if (currentPage == "model_tune") renderPage()
                 } catch (e: Exception) {
                     toast(e.message ?: "Nilai tune tidak valid.")
                 }
