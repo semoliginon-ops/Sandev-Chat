@@ -782,7 +782,6 @@ class MainActivity : AppCompatActivity() {
             hint = "Ketik pesan…"; setSingleLine(true); maxLines = 1; imeOptions = EditorInfo.IME_ACTION_SEND
             textSize = 14f; setTextColor(p.text); setHintTextColor(p.muted); setPadding(dp(12), dp(10), dp(12), dp(10))
             background = panelBackground(p.background, p.muted, 12)
-            isHorizontallyScrolling = true
         }
         chatActions.addView(chatInput, LinearLayout.LayoutParams(0, dp(46), 1f).apply { rightMargin = dp(8) })
         addAction(chatActions, if (blackjackBotBusy) "Tunggu…" else "Kirim") { sendBlackjackChat(chatInput.text.toString()) }
