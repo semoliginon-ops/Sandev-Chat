@@ -1,6 +1,6 @@
 package com.sandev.starfall
 
-import android.app.Activity
+import androidx.activity.ComponentActivity
 import android.database.Cursor
 import android.graphics.Color
 import android.graphics.Typeface
@@ -26,7 +26,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Menu-only local Gemma chat; inference never runs inside the battle loop. */
-class GemmaWingmanActivity : Activity() {
+class GemmaWingmanActivity : ComponentActivity() {
     private val prefs by lazy { getSharedPreferences("starfall_gemma", MODE_PRIVATE) }
     private var model: LlamaModel? = null
     private var busy = false
