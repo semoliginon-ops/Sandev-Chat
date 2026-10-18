@@ -7,6 +7,11 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.LinearGradient
+import android.graphics.RadialGradient
+import android.graphics.Shader
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.app.AlertDialog
 import android.widget.EditText
 import android.text.InputType
@@ -36,7 +41,13 @@ private data class Mob(
 
 private class ForestGameView(context: Context) : View(context) {
     private val prefs = context.getSharedPreferences("starfall_rpg_save", Context.MODE_PRIVATE)
-    private val paint = Paint().apply { isAntiAlias = false; typeface = android.graphics.Typeface.MONOSPACE }
+    private val paint = Paint().apply { isAntiAlias = true; typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD) }
+    private val tone = ToneGenerator(AudioManager.STREAM_MUSIC, 38)
+    private data class Effect(var x: Float, var y: Float, var tx: Float, var ty: Float, var life: Float, val kind: Int)
+    private val effects = mutableListOf<Effect>()
+    private var hitFlash = 0f
+    private var lastPlayerX = 470f
+    private var lastPlayerY = 285f
     private val random = Random(System.currentTimeMillis())
     private val trees = listOf(
         RectF(110f,105f,155f,160f), RectF(250f,95f,300f,150f), RectF(430f,120f,480f,175f),
@@ -61,6 +72,7 @@ private class ForestGameView(context: Context) : View(context) {
     private var messageTime = 5f; private var clock = 0f
     private var bossSpawned = false; private var bossCleared = false
     private var screen = "MAIN"
+    private var cityMessage = "Kota Asterfall: bicara dengan warga sebelum masuk hutan."
     private var playerName = prefs.getString("player_name", "").orEmpty()
     private var hero = prefs.getString("hero", "Vanguard").orEmpty()
     private var potions = prefs.getInt("potions", 2).coerceAtLeast(0)
@@ -80,6 +92,8 @@ private class ForestGameView(context: Context) : View(context) {
         6 -> 490; 7 -> 600; 8 -> 720; else -> 850
     }
     private fun say(s: String, t: Float = 2f) { message = s; messageTime = t }
+    private fun sfx(kind: Int) { try { tone.startTone(kind, if (kind == ToneGenerator.TONE_PROP_BEEP) 65 else 105) } catch (_: Exception) {} }
+    private fun fx(sx: Float, sy: Float, tx: Float, ty: Float, kind: Int, life: Float = 0.32f) { effects.add(Effect(sx,sy,tx,ty,life,kind)) }
     private fun save() {
         prefs.edit().putInt("level", level).putInt("exp", exp).putInt("gold", gold).putInt("kills", kills).putString("player_name", playerName).putString("hero", hero).putInt("potions", potions).putInt("materials", materials).putInt("weapon_level", weaponLevel).putInt("armor_level", armorLevel).putInt("skill_level", skillLevel).apply()
     }
@@ -99,6 +113,9 @@ private class ForestGameView(context: Context) : View(context) {
 
     private fun update(dt: Float) {
         clock += dt
+        hitFlash = max(0f, hitFlash-dt)
+        effects.forEach { it.life -= dt }
+        effects.removeAll { it.life <= 0f }
         messageTime = max(0f, messageTime - dt)
         attackTimer = max(0f, attackTimer - dt); gemmaTimer = max(0f, gemmaTimer - dt)
         dodgeCooldown = max(0f, dodgeCooldown - dt); dodgeTime = max(0f, dodgeTime - dt)
@@ -133,7 +150,8 @@ private class ForestGameView(context: Context) : View(context) {
             if (wasWinding > 0f && m.windup <= 0f) {
                 val radius = if (m.kind == 2) 88f else 58f
                 if (dist(m.x, m.y, x, y) < radius && invuln <= 0f) {
-                    hp -= if (m.kind == 2) 20f else if (m.kind == 1) 12f else 8f
+                    hp -= max(1f, (if (m.kind == 2) 20f else if (m.kind == 1) 12f else 8f) - armorLevel*3f)
+                    hitFlash=0.22f; fx(x,y,m.x,m.y,3); sfx(ToneGenerator.TONE_PROP_NACK)
                     say("Kena serangan! Baca tanda lalu dodge.", 1.7f)
                 }
                 m.attack = if (m.kind == 2) 4f else if (m.kind == 1) 3f else 2.5f
@@ -144,7 +162,8 @@ private class ForestGameView(context: Context) : View(context) {
             val target = mobs.filter { it.alive && dist(it.x, it.y, x, y) < 112f }
                 .minByOrNull { dist(it.x, it.y, x, y) }
             if (target != null) {
-                target.hp -= damage; attackTimer = 0.7f
+                target.hp -= damage + weaponLevel*5f; attackTimer = 0.7f
+                fx(x,y,target.x,target.y,2); sfx(ToneGenerator.TONE_PROP_BEEP)
                 if (target.hp <= 0f) defeat(target) else say("Serangan dasar mengenai target.", 0.65f)
             }
         }
@@ -153,7 +172,8 @@ private class ForestGameView(context: Context) : View(context) {
                 .minByOrNull { dist(it.x, it.y, gemmaX, gemmaY) }
             if (target != null) {
                 target.hp -= 10f + (level - 1) * 2f; gemmaTimer = 2f
-                say("Gemma: Arcane Bolt!", 0.9f)
+                fx(gemmaX,gemmaY,target.x,target.y,1,0.52f); sfx(ToneGenerator.TONE_PROP_ACK)
+                say("Gemma: ✨ Arcane Bolt!", 0.9f)
                 if (target.hp <= 0f) defeat(target)
             }
         }
@@ -178,6 +198,7 @@ private class ForestGameView(context: Context) : View(context) {
     private fun defeat(m: Mob) {
         if (!m.alive) return
         m.alive = false
+        fx(m.x,m.y,m.x,m.y,4,0.55f); sfx(ToneGenerator.TONE_PROP_ACK)
         if (m.kind == 2) { kills++; return }
         kills++
         if (m.kind == 1) { exp += 22; gold += random.nextInt(6, 11) }
@@ -207,11 +228,12 @@ private class ForestGameView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         canvas.save(); canvas.scale(width / 960f, height / 540f)
-        if (screen == "GAME") { update(0.016f); drawForest(canvas); drawCharacters(canvas); drawHud(canvas) } else drawMenu(canvas)
+        if (screen == "GAME") { update(0.016f); drawForest(canvas); drawCharacters(canvas); drawEffects(canvas); drawHud(canvas) } else drawMenu(canvas)
         canvas.restore(); postInvalidateDelayed(16L)
     }
     private fun drawForest(c: Canvas) {
         c.drawColor(Color.rgb(24, 45, 36))
+        paint.shader=LinearGradient(0f,0f,960f,540f,Color.rgb(28,65,48),Color.rgb(11,31,34),Shader.TileMode.CLAMP); c.drawRect(0f,0f,960f,540f,paint); paint.shader=null
         for (tx in 0..59) for (ty in 0..32) {
             val xx = tx * 16f; val yy = ty * 16f
             paint.color = if ((tx * 7 + ty * 13) % 5 == 0) Color.rgb(34,72,48) else Color.rgb(29,61,42)
@@ -219,11 +241,11 @@ private class ForestGameView(context: Context) : View(context) {
             if ((tx * 3 + ty * 11) % 17 == 0) { paint.color = Color.rgb(63,98,55); c.drawRect(xx+5,yy+7,xx+8,yy+10,paint) }
         }
         trees.forEach { t ->
-            paint.color = Color.rgb(22,43,31); c.drawRect(t.left-4,t.top+7,t.right+4,t.bottom+8,paint)
-            paint.color = Color.rgb(79,57,37); c.drawRect(t.centerX()-7,t.centerY(),t.centerX()+7,t.bottom+7,paint)
-            paint.color = Color.rgb(32,92,49); c.drawRect(t,paint)
-            paint.color = Color.rgb(52,125,60); c.drawRect(t.left+6,t.top+6,t.right-8,t.bottom-10,paint)
-            paint.color = Color.rgb(91,153,68); c.drawRect(t.left+13,t.top+10,t.left+22,t.top+19,paint)
+            paint.color = Color.argb(90,3,15,12); c.drawOval(RectF(t.left-9,t.bottom-3,t.right+12,t.bottom+15),paint)
+            paint.color = Color.rgb(79,57,37); c.drawRoundRect(RectF(t.centerX()-8,t.centerY()-3,t.centerX()+9,t.bottom+10),4f,4f,paint)
+            paint.shader=LinearGradient(t.left,t.top,t.right,t.bottom,Color.rgb(72,142,75),Color.rgb(18,63,43),Shader.TileMode.CLAMP); c.drawOval(RectF(t.left-7,t.top-7,t.right+7,t.bottom-3),paint); paint.shader=null
+            paint.color = Color.rgb(56,126,61); c.drawOval(RectF(t.left+3,t.top+2,t.right-5,t.bottom-11),paint)
+            paint.color = Color.rgb(103,170,80); c.drawCircle(t.left+16,t.top+15,5f,paint); c.drawCircle(t.left+29,t.top+24,4f,paint)
         }
         paint.color = Color.rgb(95,78,52); c.drawRect(430f,255f,520f,315f,paint)
         paint.color = Color.rgb(120,101,66); c.drawRect(442f,264f,508f,305f,paint)
@@ -231,40 +253,49 @@ private class ForestGameView(context: Context) : View(context) {
     private fun drawCharacters(c: Canvas) {
         mobs.filter { it.alive }.forEach { m ->
             if (m.kind == 2) {
-                paint.color = Color.rgb(39,83,47); c.drawRect(m.x-25,m.y-31,m.x+25,m.y+26,paint)
-                paint.color = Color.rgb(75,143,61); c.drawRect(m.x-19,m.y-27,m.x+19,m.y+15,paint)
-                paint.color = Color.rgb(222,221,143); c.drawRect(m.x-12,m.y-15,m.x-5,m.y-8,paint); c.drawRect(m.x+5,m.y-15,m.x+12,m.y-8,paint)
+                paint.color = Color.argb(100,0,0,0); c.drawOval(RectF(m.x-28,m.y+15,m.x+30,m.y+31),paint)
+                paint.shader=LinearGradient(m.x-20,m.y-28,m.x+20,m.y+23,Color.rgb(112,172,72),Color.rgb(29,66,40),Shader.TileMode.CLAMP); c.drawRoundRect(RectF(m.x-25,m.y-31,m.x+25,m.y+26),12f,12f,paint); paint.shader=null
+                text(c,"🌳",m.x-21,m.y+12,38f,Color.WHITE)
+                paint.color = Color.rgb(222,221,143); c.drawCircle(m.x-9,m.y-13,3.5f,paint); c.drawCircle(m.x+9,m.y-13,3.5f,paint)
                 bar(c,m.x-36,m.y-43,72f,7f,m.hp,m.maxHp,Color.rgb(210,64,64))
                 text(c,"THORNHEART",m.x-47,m.y-50,9f,Color.rgb(255,220,140))
                 if (m.windup > 0f) text(c,"DODGE!",m.x-24,m.y+42,12f,Color.YELLOW)
             } else {
                 val wolf = m.kind == 1
-                paint.color = if (wolf) Color.rgb(73,78,94) else Color.rgb(52,128,72)
-                c.drawRect(m.x-14,m.y-10,m.x+14,m.y+11,paint)
-                paint.color = if (wolf) Color.rgb(120,127,147) else Color.rgb(90,180,86)
-                c.drawRect(m.x-8,m.y-17,m.x+10,m.y+4,paint)
-                paint.color = Color.rgb(230,210,125); c.drawRect(m.x+5,m.y-11,m.x+9,m.y-7,paint)
+                paint.color = Color.argb(95,0,0,0); c.drawOval(RectF(m.x-17,m.y+6,m.x+18,m.y+18),paint)
+                text(c,if(wolf) "🐺" else "🟢",m.x-18,m.y+8,30f,Color.WHITE)
+                if(!wolf) text(c,"👀",m.x-8,m.y-5,11f,Color.WHITE)
                 bar(c,m.x-18,m.y-24,36f,5f,m.hp,m.maxHp,Color.rgb(207,70,65))
                 if (m.windup > 0f) text(c,"!",m.x-3,m.y-28,16f,Color.YELLOW)
             }
         }
-        // Temporary original pixel-style sprites; no external assets or paid content.
-        paint.color=Color.rgb(45,28,54);c.drawRect(gemmaX-10,gemmaY-13,gemmaX+10,gemmaY+13,paint)
-        paint.color=Color.rgb(111,71,156);c.drawRect(gemmaX-8,gemmaY-11,gemmaX+8,gemmaY+9,paint)
-        paint.color=Color.rgb(191,139,207);c.drawRect(gemmaX-6,gemmaY-17,gemmaX+6,gemmaY-5,paint)
-        paint.color=Color.rgb(91,47,126);c.drawRect(gemmaX-9,gemmaY-19,gemmaX+7,gemmaY-13,paint)
-        paint.color=Color.rgb(225,210,139);c.drawRect(gemmaX+9,gemmaY-12,gemmaX+13,gemmaY+7,paint)
-        text(c,"GEMMA",gemmaX-22,gemmaY-25,9f,Color.rgb(235,202,255))
+        paint.color=Color.argb(80,0,0,0); c.drawOval(RectF(gemmaX-18,gemmaY+6,gemmaX+19,gemmaY+17),paint)
+        text(c,"🧙🏻‍♀️",gemmaX-18,gemmaY+9,31f,Color.WHITE)
+        text(c,"✨",gemmaX+9,gemmaY-12+ kotlin.math.sin(clock*4f)*3f,15f,Color.WHITE)
+        text(c,"GEMMA",gemmaX-23,gemmaY-25,9f,Color.rgb(235,202,255))
         if (invuln <= 0f || (clock * 12f).toInt() % 2 == 0) {
-            paint.color=Color.rgb(25,45,54);c.drawRect(x-11,y-12,x+11,y+14,paint)
-            paint.color=Color.rgb(46,143,155);c.drawRect(x-8,y-10,x+8,y+10,paint)
-            paint.color=Color.rgb(227,183,135);c.drawRect(x-6,y-17,x+6,y-5,paint)
-            paint.color=Color.rgb(47,77,96);c.drawRect(x-8,y-19,x+7,y-14,paint)
+            paint.color=Color.argb(80,0,0,0); c.drawOval(RectF(x-16,y+7,x+17,y+17),paint)
+            text(c,when(hero){"Vanguard"->"🛡️";"Ranger"->"🏹";else->"🧙"},x-17,y+9,31f,Color.WHITE)
+            if(hitFlash>0f){paint.color=Color.argb(100,255,60,60);c.drawCircle(x,y-3,23f,paint)}
         }
     }
+
+    private fun drawEffects(c: Canvas) {
+        effects.forEach { e ->
+            val p=(1f-e.life/(if(e.kind==1)0.52f else if(e.kind==4)0.55f else 0.32f)).coerceIn(0f,1f)
+            when(e.kind){
+                1 -> { val px=e.x+(e.tx-e.x)*p; val py=e.y+(e.ty-e.y)*p; paint.color=Color.rgb(150,104,255);c.drawCircle(px,py,7f*(1f-p)+2f,paint);text(c,"✨",px-8,py+5,18f,Color.WHITE) }
+                2 -> { paint.color=Color.argb((220*(1f-p)).toInt(),255,222,107);c.drawLine(e.x,e.y-14,e.x+18f*(1f-p),e.y+8f*(1f-p),paint);c.drawLine(e.x,e.y+10,e.x-17f*(1f-p),e.y-7f,paint);paint.strokeWidth=4f;c.drawCircle(e.tx,e.ty,9f+16f*p,paint);paint.strokeWidth=1f }
+                3 -> { paint.color=Color.argb((190*(1f-p)).toInt(),255,65,65);paint.strokeWidth=4f;c.drawCircle(e.x,e.y,12f+30f*p,paint);paint.strokeWidth=1f }
+                4 -> { paint.color=Color.argb((150*(1f-p)).toInt(),255,222,126);c.drawCircle(e.x,e.y-12f*p,12f+15f*p,paint);text(c,"💥",e.x-12,e.y-8,20f,Color.WHITE) }
+                5 -> { paint.color=Color.argb((200*(1f-p)).toInt(),96,223,255);paint.strokeWidth=4f;c.drawCircle(e.x,e.y,22f+58f*p,paint);paint.strokeWidth=1f;text(c,"⚔️",e.x-12,e.y+6,24f,Color.WHITE) }
+            }
+        }
+    }
+
     private fun drawHud(c: Canvas) {
         paint.color=Color.argb(225,14,25,27);c.drawRoundRect(RectF(12f,10f,410f,103f),8f,8f,paint)
-        text(c,"STARFALL RPG",24f,31f,16f,Color.rgb(236,220,165))
+        text(c,"⭐ STARFALL RPG",24f,31f,16f,Color.rgb(236,220,165))
         text(c,playerName.ifBlank { "Adventurer" }+" · "+hero,24f,49f,11f,Color.rgb(195,220,211))
         text(c,"LV "+level+"  EXP "+exp+"/"+need(level)+"  GOLD "+gold,24f,67f,12f)
         text(c,"PLAYER",24f,68f,10f);bar(c,78f,59f,145f,11f,hp,maxHp,Color.rgb(209,73,74))
@@ -279,7 +310,7 @@ private class ForestGameView(context: Context) : View(context) {
         paint.color=Color.argb(135,190,210,190);c.drawCircle(88f,445f,51f,paint)
         paint.color=Color.argb(190,49,90,75);c.drawCircle(88f+moveX*20f,445f+moveY*20f,21f,paint);text(c,"MOVE",65f,510f,10f)
         paint.color=Color.argb(225,135,69,68);c.drawCircle(780f,449f,35f,paint);text(c,"DODGE",752f,454f,10f)
-        paint.color=Color.argb(225,103,69,159);c.drawCircle(872f,449f,35f,paint);text(c,"SKILL",852f,454f,11f)
+        paint.color=Color.argb(225,103,69,159);c.drawCircle(872f,449f,35f,paint);text(c,"✨",858f,444f,22f);text(c,"SKILL",852f,469f,10f)
         if(skillCooldown>0f) text(c,"${skillCooldown.toInt()+1}s",861f,422f,10f,Color.YELLOW)
         paint.color=Color.argb(225,18,30,34); c.drawRoundRect(RectF(884f,55f,948f,85f),6f,6f,paint); text(c,"MENU",895f,75f,11f,Color.rgb(255,230,172))
     }
@@ -291,6 +322,38 @@ private class ForestGameView(context: Context) : View(context) {
         c.drawRoundRect(RectF(bx,by,bx+bw,by+bh),7f,7f,paint); paint.style=Paint.Style.FILL
         text(c,label,bx+12f,by+bh*0.62f,if(label.length>24) 11f else 14f,Color.WHITE)
     }
+
+    private fun drawCity(c: Canvas) {
+        c.drawColor(Color.rgb(37,49,58))
+        paint.shader=LinearGradient(0f,0f,0f,540f,Color.rgb(63,105,125),Color.rgb(228,173,111),Shader.TileMode.CLAMP);c.drawRect(0f,0f,960f,540f,paint);paint.shader=null
+        // sunset haze and distant skyline
+        paint.color=Color.argb(90,255,222,157);c.drawCircle(760f,90f,75f,paint)
+        for(i in 0..9){val bx=i*105f-15f;val hh=75f+(i*37%80);paint.color=if(i%2==0)Color.rgb(76,96,92) else Color.rgb(89,105,97);c.drawRect(bx,220f-hh,bx+82f,280f,paint);paint.color=Color.rgb(186,157,105);for(wx in 0..2)for(wy in 0..2)c.drawRect(bx+12f+wx*22f,235f-hh+wy*22f,bx+20f+wx*22f,244f-hh+wy*22f,paint)}
+        paint.color=Color.rgb(123,104,79);c.drawRect(0f,300f,960f,540f,paint)
+        paint.color=Color.rgb(153,132,99);c.drawRect(0f,330f,960f,510f,paint)
+        for(i in 0..12){paint.color=if(i%2==0)Color.rgb(174,151,112) else Color.rgb(138,119,88);c.drawRect(i*80f,330f,i*80f+2f,510f,paint)}
+        // Inn, shop, blacksmith
+        val buildings=listOf(60f to "🏨",275f to "🛒",490f to "⚒️")
+        buildings.forEachIndexed { idx,b ->
+            val bx=b.first;paint.color=Color.rgb(81,54,45);c.drawRect(bx,184f,bx+165f,325f,paint)
+            paint.color=Color.rgb(169,119,72);c.drawRect(bx-10,169f,bx+175f,193f,paint)
+            paint.color=Color.rgb(109,48,48);c.drawRect(bx+50,249f,bx+105f,325f,paint)
+            text(c,b.second,bx+61f,237f,28f,Color.WHITE)
+            text(c,listOf("INN","ITEM SHOP","SMITHY")[idx],bx+36f,159f,12f,Color.rgb(255,238,190))
+        }
+        text(c,"🏹",720f,350f,38f,Color.WHITE);text(c,"🧙🏻‍♀️",820f,350f,38f,Color.WHITE)
+        text(c,"🧑‍🌾",590f,374f,34f,Color.WHITE);text(c,"🧔",660f,410f,34f,Color.WHITE)
+        text(c,"🌀",786f,455f,65f,Color.WHITE)
+        paint.color=Color.argb(210,12,23,25);c.drawRoundRect(RectF(20f,18f,490f,85f),9f,9f,paint)
+        text(c,"🏙️ KOTA ASTERFALL",38f,48f,21f,Color.rgb(255,222,153))
+        text(c,cityMessage.take(55),38f,70f,11f,Color.WHITE)
+        menuButton(c,"🧑‍🌾 WARGA",30f,420f,150f,42f)
+        menuButton(c,"🛒 TOKO",190f,420f,150f,42f)
+        menuButton(c,"⚒️ PANDAI BESI",350f,420f,180f,42f)
+        menuButton(c,"🌀 PORTAL HUTAN",690f,475f,240f,45f,true)
+        menuButton(c,"KEMBALI",30f,475f,150f,42f)
+    }
+
     private fun drawMenu(c: Canvas) {
         c.drawColor(Color.rgb(17,34,30))
         for(i in 0..59){paint.color=if(i%2==0) Color.rgb(22,43,36) else Color.rgb(19,38,33);c.drawRect(i*16f,0f,i*16f+16f,540f,paint)}
@@ -309,6 +372,10 @@ private class ForestGameView(context: Context) : View(context) {
                 text(c,"Offline · Save lokal · Prototype",520f,205f,15f,Color.rgb(166,206,170))
                 text(c,"Vanguard: HP tinggi | Ranger: damage tinggi",520f,235f,12f)
                 text(c,"Mage: lebih rapuh, skill area lebih kuat",520f,260f,12f)
+                menuButton(c,"KOTA ASTERFALL",520f,300f,280f,48f)
+            }
+            "CITY" -> {
+                drawCity(c)
             }
             "CREATE" -> {
                 text(c,"Buat nama pemain lalu pilih kelas hero.",52f,133f,13f)
@@ -375,11 +442,20 @@ private class ForestGameView(context: Context) : View(context) {
         fun hit(a:Float,b:Float,w:Float,h:Float)=tx in a..(a+w)&&ty in b..(b+h)
         when(screen){
             "MAIN" -> when{
-                hit(52f,158f,360f,49f)->if(playerName.isNotBlank()){screen="GAME";say("Selamat datang, "+playerName,3f)}else screen="CREATE"
+                hit(52f,158f,360f,49f)->if(playerName.isNotBlank()){screen="CITY";say("Selamat datang di Asterfall, "+playerName,3f)}else screen="CREATE"
                 hit(52f,218f,360f,45f)->screen="CREATE"
                 hit(52f,274f,170f,43f)->screen="CHARACTER";hit(242f,274f,170f,43f)->screen="INVENTORY"
                 hit(52f,328f,170f,43f)->screen="SKILLS";hit(242f,328f,170f,43f)->screen="EQUIPMENT"
                 hit(52f,382f,170f,43f)->screen="QUESTS";hit(242f,382f,170f,43f)->screen="SETTINGS"
+                hit(520f,300f,280f,48f)->screen="CITY"
+                hit(520f,300f,280f,48f)->screen="CITY"
+            }
+            "CITY" -> when {
+                hit(30f,420f,150f,42f)->{cityMessage="Warga: Monster makin agresif di dalam hutan. Siapkan ramuan!";say(cityMessage,3f)}
+                hit(190f,420f,150f,42f)->{cityMessage="Pedagang: Ramuan dan bahan kerajinan akan tersedia di update berikutnya.";say(cityMessage,3f)}
+                hit(350f,420f,180f,42f)->{cityMessage="Pandai besi: Upgrade senjata dan armor bisa kamu beli dari menu Equipment.";screen="EQUIPMENT"}
+                hit(690f,475f,240f,45f)->{screen="GAME";x=470f;y=285f;say("🌀 Portal aktif! Selamat datang di Hutan Sunyi.",3f);sfx(ToneGenerator.TONE_PROP_ACK)}
+                hit(30f,475f,150f,42f)->screen="MAIN"
             }
             "CREATE" -> when{
                 hit(52f,158f,360f,46f)->showNameDialog()
@@ -427,6 +503,7 @@ private class ForestGameView(context: Context) : View(context) {
                     dodgeTime=0.22f;dodgeCooldown=3f;invuln=0.28f;say("Dodge!",0.7f)
                 } else if(tx>825f && ty>390f && skillCooldown<=0f){
                     skillCooldown=6f
+                    fx(x,y,x,y,5,0.45f);sfx(ToneGenerator.TONE_PROP_BEEP)
                     val skillDamage = 42f + (skillLevel-1)*18f + weaponLevel*5f
                     mobs.filter{it.alive && dist(it.x,it.y,x,y)<105f}.toList().forEach{it.hp-=skillDamage;if(it.hp<=0f)defeat(it)}
                     say("ARC SLASH Lv."+skillLevel+"!",1f)
