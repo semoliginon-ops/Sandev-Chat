@@ -112,8 +112,8 @@ class MainActivity : ComponentActivity() {
     private fun showHome() {
         page = "home"
         val root = layout("SANDEV", "STARFALL 1945 • OFFLINE SPACE RPG")
-        root.addView(LogoView(this), LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(text("Classic vertical shooter • Developer: SANDEV", 13f))
+        root.addView(LogoView(this), LinearLayout.LayoutParams(-1, dp(218)))
+        root.addView(text("CLASSIC SPACE RPG  •  OFFLINE", 12f))
         if (pilot.isBlank()) {
             val input = EditText(this).apply {
                 hint = "Create Player — pilot name"; setSingleLine(true)
@@ -135,19 +135,24 @@ class MainActivity : ComponentActivity() {
     }
     private fun showMenu() {
         page = "menu"
-        val root = layout("STARFALL COMMAND", "$pilot • LV $level • EXP $exp/" + needed() + " • Credits $credits")
-        val scroll = ScrollView(this)
+        val root = layout("STARFALL COMMAND", "$pilot  •  LV $level  •  $credits CR")
+        root.setPadding(dp(14), dp(12), dp(14), dp(10))
+        root.addView(text("FRONTIER SECTOR  /  STAGE $stage", 12f))
+        val scroll = ScrollView(this).apply { isFillViewport = true; clipToPadding = false }
         val items = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(items); root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        addButton(items, "▶ CAMPAIGN — STAGE $stage") { battle() }
-        addButton(items, "HANGAR & SHIP STATUS") { hangar() }
-        addButton(items, "WORKSHOP / SHOP") { shop() }
-        addButton(items, "SKILL LAB") { skillLab() }
-        addButton(items, "GEMMA — CHAT & PILOT PROFILE") { gemma() }
-        addButton(items, "BATTLE RECORDS") { records() }
-        addButton(items, "MISSIONS & SECTOR MAP") { sectorMap() }
-        addButton(items, "SETTINGS") { settingsPage() }
-        addButton(root, "START BATTLE") { battle() }
+        items.addView(text("MISSION CONTROL", 12f))
+        addButton(items, "🚀  CAMPAIGN  •  STAGE $stage") { battle() }
+        items.addView(text("SHIP & UPGRADES", 12f))
+        addButton(items, "🛸  HANGAR / SHIP STATUS") { hangar() }
+        addButton(items, "⚙  WORKSHOP / SHOP") { shop() }
+        addButton(items, "✦  SKILL LAB") { skillLab() }
+        items.addView(text("PILOT SYSTEMS", 12f))
+        addButton(items, "💜  GEMMA AI  •  CHAT & PROFILE") { gemma() }
+        addButton(items, "▤  MISSIONS / SECTOR MAP") { sectorMap() }
+        addButton(items, "◷  BATTLE RECORDS") { records() }
+        addButton(items, "⚙  SETTINGS") { settingsPage() }
+        addButton(root, "▶  DEPLOY TO BATTLE") { battle() }
         setContentView(root)
     }
 
@@ -217,9 +222,9 @@ class MainActivity : ComponentActivity() {
                 }
                 if (active == null || !active.isLoaded) callback("")
                 else {
-                    val system = "Kamu adalah Gemma, pilot wingman AI yang benar-benar ikut bertempur di SANDEV Starfall 1945. Status battle adalah fakta; jangan mengarang kejadian atau mengklaim aksi berhasil sebelum terjadi. Pilih satu aksi: ACTION: ATTACK, DODGE, COVER, BOSS, atau SKILL. ATTACK menyerang target terdekat; DODGE menghindari ancaman; COVER bergerak dekat pilot; BOSS fokus pada boss; SKILL menembakkan salvo skill bila siap. Lalu tulis SAY: satu komentar Indonesia singkat yang sesuai fakta. Kedua baris harus kamu hasilkan sendiri."
+                    val system = "Kamu Gemma, wingman AI asli di SANDEV Starfall 1945. Kamu sendiri yang memilih aksi berdasarkan status battle; jangan pernah mengarang kejadian. Balas WAJIB dua baris saja dengan format persis: ACTION: ATTACK atau DODGE atau COVER atau BOSS atau SKILL; baris kedua SAY: komentar pendek bahasa Indonesia. ATTACK menyerang musuh terdekat, DODGE menghindari bahaya, COVER mendekati pilot, BOSS fokus boss, SKILL memakai salvo jika siap. Jangan tulis analisis atau format lain."
                     val readyModel = active
-                    callback(withContext(Dispatchers.IO) { Llama.complete(readyModel, prompt = prompt, systemPrompt = system, maxTokens = 72).text.trim() })
+                    callback(withContext(Dispatchers.IO) { Llama.complete(readyModel, prompt = prompt, systemPrompt = system, maxTokens = 96).text.trim() })
                 }
             } catch (_: Exception) { callback("") }
             finally { battleInferenceBusy = false }
@@ -302,7 +307,7 @@ private class LogoView(context: Context) : View(context) {
 
 private class ShooterView(context: Context, private val weaponLevel: Int, private val hullLevel: Int, private val stageNumber: Int, private val shipClass: String, private val skillLevel: Int, private val askGemma: (String, (String) -> Unit) -> Unit, val onClear: (Boolean, Int, Int, Int) -> Unit) : View(context) {
     private data class Shot(var x: Float, var y: Float, var speed: Float, var damage: Int)
-    private data class Enemy(var x: Float, var y: Float, var hp: Int, var speed: Float, val boss: Boolean = false)
+    private data class Enemy(var x: Float, var y: Float, var hp: Int, var speed: Float, val boss: Boolean = false, val kind: Int = 0, var fireTimer: Float = 1f)
     private data class EnemyShot(var x: Float, var y: Float, var vx: Float, var vy: Float, val damage: Int)
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val shots = mutableListOf<Shot>(); private val enemies = mutableListOf<Enemy>(); private val enemyShots = mutableListOf<EnemyShot>()
@@ -310,7 +315,7 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
     private var px = 0f; private var py = 0f; private var wx = 0f; private var wy = 0f
     private var last = System.nanoTime(); private var elapsed = 0f
     private var fire = 0f; private var spawn = 0f; private var skill = 0f
-    private var commentTime = 0f; private var comment = ""; private var gemmaAction = "WAIT"; private var decisionTimer = 1f; private var gemmaThinking = false; private var bossFireTimer = 1.1f; private val battleHistory = mutableListOf<String>()
+    private var commentTime = 0f; private var comment = ""; private var gemmaAction = "WAIT"; private var decisionTimer = .35f; private var gemmaThinking = false; private var bossFireTimer = 1.1f; private val battleHistory = mutableListOf<String>()
     private var defeated = 0; private var hp = 100 + hullLevel * 20 + if (shipClass == "GUARDIAN") 40 else 0; private val maxHp = 100 + hullLevel * 20 + if (shipClass == "GUARDIAN") 40 else 0; private var done = false
     private var bossSpawned = false; private var bossCleared = false
     private val target = 30
@@ -333,8 +338,17 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
         p.color = Color.rgb(83, 230, 255); c.drawRoundRect(17f, 38f, 17f + (w - 34f) * (hp.toFloat() / maxHp).coerceIn(0f, 1f), 45f, 4f, 4f, p)
         p.color = Color.rgb(182, 205, 232); p.textSize = 11f
         c.drawText(if (bossSpawned && !bossCleared) "BOSS ENGAGED" else "HOSTILES $defeated/$target", 17f, 59f, p)
-        shots.forEach { p.color = if (it.damage > 1) Color.rgb(255, 205, 105) else Color.CYAN; p.strokeWidth = if (it.damage > 1) 5f else 3f; c.drawLine(it.x, it.y, it.x, it.y + 13f, p) }
-        enemyShots.forEach { shot -> p.color = Color.argb(70, 255, 66, 103); c.drawCircle(shot.x, shot.y, 11f, p); p.color = Color.rgb(255, 84, 112); c.drawCircle(shot.x, shot.y, 5f, p); p.color = Color.rgb(255, 218, 173); c.drawCircle(shot.x, shot.y, 2f, p) }
+        shots.forEach { shot ->
+            p.color = Color.argb(85, 70, 235, 255); c.drawCircle(shot.x, shot.y + 5f, 9f, p)
+            p.color = if (shot.damage > 1) Color.rgb(255, 205, 105) else Color.rgb(120, 250, 255)
+            p.strokeWidth = if (shot.damage > 1) 7f else 5f
+            c.drawLine(shot.x, shot.y - 4f, shot.x, shot.y + 19f, p)
+        }
+        enemyShots.forEach { shot ->
+            p.color = Color.argb(95, 255, 35, 85); c.drawCircle(shot.x, shot.y, 13f, p)
+            p.color = Color.rgb(255, 55, 95); c.drawCircle(shot.x, shot.y, 7f, p)
+            p.color = Color.rgb(255, 235, 185); c.drawCircle(shot.x, shot.y, 3f, p)
+        }
         enemies.forEach { e ->
             if (e.boss) {
                 p.color = Color.argb(72, 255, 50, 100); c.drawCircle(e.x, e.y, 78f, p); p.color = Color.argb(110, 255, 120, 160); c.drawCircle(e.x, e.y, 61f, p)
@@ -346,9 +360,12 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
                 p.color = Color.rgb(255, 75, 119); c.drawRoundRect(w * .18f, 78f, w * .18f + (w * .64f) * (e.hp.toFloat() / (220 + stageNumber * 35)).coerceIn(0f, 1f), 86f, 5f, 5f, p)
                 p.color = Color.WHITE; p.textSize = 11f; p.typeface = Typeface.DEFAULT_BOLD; c.drawText("DREADNOUGHT • BOSS", w * .18f, 101f, p)
             } else {
-                p.color = if (stageNumber % 3 == 0) Color.rgb(255, 155, 92) else Color.rgb(255, 70, 100)
-                val path = Path().apply { moveTo(e.x, e.y + 20f); lineTo(e.x + 19f, e.y - 13f); lineTo(e.x, e.y - 5f); lineTo(e.x - 19f, e.y - 13f); close() }; c.drawPath(path, p)
-                p.color = Color.rgb(255, 190, 205); c.drawCircle(e.x, e.y, 3f, p)
+                val emote = when (e.kind) { 0 -> "👾"; 1 -> "🛸"; 2 -> "🤖"; else -> "☄️" }
+                p.textSize = 34f; p.typeface = Typeface.DEFAULT
+                p.color = Color.argb(95, 255, 65, 110); c.drawCircle(e.x, e.y, 23f, p)
+                p.color = Color.WHITE; c.drawText(emote, e.x - p.measureText(emote) / 2f, e.y + 12f, p)
+                p.color = Color.rgb(255, 90, 125); c.drawRoundRect(e.x - 17f, e.y - 25f, e.x + 17f, e.y - 21f, 2f, 2f, p)
+                p.color = Color.rgb(255, 205, 105); c.drawRoundRect(e.x - 17f, e.y - 25f, e.x - 17f + 34f * (e.hp.toFloat() / 18f).coerceIn(0f, 1f), e.y - 21f, 2f, 2f, p)
             }
         }
         val playerColor = when (shipClass) { "GUARDIAN" -> Color.rgb(102, 255, 176); "STRIKER" -> Color.rgb(255, 177, 83); else -> Color.rgb(65, 220, 255) }
@@ -372,13 +389,13 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
         val targetEnemy = if (gemmaAction == "BOSS") enemies.firstOrNull { it.boss }
             else enemies.minByOrNull { kotlin.math.abs(it.x - wx) + kotlin.math.abs(it.y - wy) * .55f }
         if (decisionTimer <= 0f && !gemmaThinking) {
-            gemmaThinking = true; decisionTimer = 9f
+            gemmaThinking = true; decisionTimer = 4.2f
             val nearest = targetEnemy?.let { if (it.boss) "DREADNOUGHT boss HP " + it.hp else "enemy HP " + it.hp + ", x=" + it.x.toInt() + ", y=" + it.y.toInt() } ?: "tidak ada target dekat"
             val state = "Stage=" + stageNumber + "; pilot hull=" + hp + "/" + maxHp + "; kills=" + defeated + "/" + target + "; Gemma action=" + gemmaAction + "; ancaman dekat=" + (danger != null) + "; target=" + nearest + "; boss=" + (bossSpawned && !bossCleared) + "; skill level=" + skillLevel + ". Riwayat: " + battleHistory.takeLast(6).joinToString(" | ") + ". Pilih keputusan untuk beberapa detik berikutnya."
             askGemma(state) { raw ->
                 gemmaThinking = false
                 if (raw.isNotBlank()) {
-                    val action = Regex("(?im)^\\s*ACTION\\s*:\\s*(ATTACK|DODGE|COVER|BOSS|SKILL)\\s*$").find(raw)?.groupValues?.get(1)?.uppercase()
+                    val action = Regex("(?i)ACTION\\s*[:=\\-]?\\s*(ATTACK|DODGE|COVER|BOSS|SKILL)").find(raw)?.groupValues?.get(1)?.uppercase()
                     if (action != null) gemmaAction = action
                     val say = Regex("(?im)^\\s*SAY\\s*:\\s*(.+)$").find(raw)?.groupValues?.get(1)?.trim()
                     if (say != null && say.isNotBlank()) { comment = say.take(58); commentTime = 4.5f; battleHistory.add(gemmaAction + ": " + comment); if (battleHistory.size > 12) battleHistory.removeAt(0) }
@@ -409,12 +426,14 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
         }
         if (spawn <= 0f && enemies.size < 8 && defeated < target) {
             val typeHp = (3 + stageNumber / 3 + weaponLevel / 3).coerceAtMost(16)
-            enemies.add(Enemy(Random.nextFloat() * w * .76f + w * .12f, -24f, typeHp, 120f + stageNumber * 2f + Random.nextFloat() * 80f))
+            val kind = Random.nextInt(4)
+            val hpForType = typeHp + if (kind == 2) 2 else 0
+            enemies.add(Enemy(Random.nextFloat() * w * .76f + w * .12f, -28f, hpForType, (if (kind == 1) 175f else 105f) + stageNumber * 2f + Random.nextFloat() * 65f, false, kind, .65f + Random.nextFloat() * 1.2f))
             spawn = max(.34f, .82f - defeated * .009f)
         }
         if (defeated >= target && enemies.isEmpty() && !bossSpawned) {
             val bossHp = 220 + stageNumber * 35
-            enemies.add(Enemy(w * .5f, h * .19f, bossHp, 0f, true)); bossSpawned = true
+            enemies.add(Enemy(w * .5f, h * .19f, bossHp, 0f, true, 4, 1f)); bossSpawned = true
             battleHistory.add("Dreadnought boss muncul setelah " + defeated + " kills."); decisionTimer = 0f
         }
         enemies.forEach { e ->
@@ -432,7 +451,26 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
                     bossFireTimer = if (phaseTwo) .78f else 1.28f
                     battleHistory.add(if (phaseTwo) "Boss melepas salvo fase dua" else "Boss menembak ke arah pilot")
                 }
-            } else { e.y += e.speed * dt; if (e.y > h + 20f) { e.hp = 0; hp = max(0, hp - 5); battleHistory.add("Musuh lolos; hull turun 5.") } }
+            } else {
+                e.fireTimer -= dt
+                when (e.kind) {
+                    1 -> e.x += sin(elapsed * 3.2f + e.y * .012f) * 82f * dt
+                    2 -> e.x += sin(elapsed * 1.8f + e.x * .02f) * 42f * dt
+                    3 -> e.x += cos(elapsed * 2.7f + e.y * .01f) * 68f * dt
+                }
+                e.x = e.x.coerceIn(22f, w - 22f)
+                e.y += e.speed * dt
+                if (e.fireTimer <= 0f && e.y > 40f && e.y < h * .78f) {
+                    val dx = px - e.x
+                    val dy = py - e.y
+                    val len = kotlin.math.sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
+                    val aimed = e.kind == 2 || e.kind == 3
+                    val speed = if (e.kind == 1) 250f else 205f
+                    enemyShots.add(EnemyShot(e.x, e.y + 13f, if (aimed) dx / len * speed else 0f, if (aimed) dy / len * speed else speed, if (e.kind == 2) 8 else 5))
+                    e.fireTimer = when (e.kind) { 0 -> 2.4f; 1 -> 1.65f; 2 -> 1.35f; else -> 1.8f } + Random.nextFloat() * .45f
+                }
+                if (e.y > h + 20f) { e.hp = 0; hp = max(0, hp - 5); battleHistory.add("Musuh lolos; hull turun 5.") }
+            }
         }
         shots.forEach { it.y += it.speed * dt }
         enemyShots.forEach { it.x += it.vx * dt; it.y += it.vy * dt }
