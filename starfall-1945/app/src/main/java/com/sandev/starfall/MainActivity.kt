@@ -3,6 +3,7 @@ package com.sandev.starfall
 import android.app.Activity
 import android.os.Bundle
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.content.res.ColorStateList
 import android.graphics.Canvas
@@ -151,11 +152,17 @@ class MainActivity : Activity() {
     }
     private fun gemma() {
         page = "gemma"
-        val root = layout("GEMMA • WINGMAN", "Level $level • Campaign stage $stage • $kills kills")
-        root.addView(text("Gemma profile and saved game stats are visible here. The local GGUF chat runtime is not connected in this first prototype.", 15f))
-        root.addView(text("Planned: chat with Gemma in the menu using your pilot profile, her profile, ship upgrades and battle history. During battle, manual chat stays hidden.", 14f))
-        addButton(root, "VIEW GAME MEMORY") { records() }
-        addButton(root, "BACK TO COMMAND") { showMenu() }; setContentView(root)
+        startActivity(Intent(this, GemmaWingmanActivity::class.java).apply {
+            putExtra("pilot", pilot)
+            putExtra("level", level)
+            putExtra("exp", exp)
+            putExtra("credits", credits)
+            putExtra("stage", stage)
+            putExtra("kills", kills)
+            putExtra("weapon", weapon)
+            putExtra("hull", hull)
+            putExtra("next_exp", needed())
+        })
     }
     private fun records() {
         info("BATTLE RECORDS", "Pilot: $pilot\nLevel: $level / 1000\nEXP: $exp / " + needed() + "\nCredits: $credits\nStage unlocked: $stage\nEnemies defeated: $kills\nWeapon upgrades: $weapon\nHull upgrades: $hull")
