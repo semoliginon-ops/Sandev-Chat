@@ -17,7 +17,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
       - name: Build prototype debug APK
         working-directory: starfall-1945
         run: ../native-sandev/gradlew --no-daemon assembleDebug
