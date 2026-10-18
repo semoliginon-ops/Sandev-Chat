@@ -212,7 +212,8 @@ class MainActivity : Activity() {
                 if (active == null || !active.isLoaded) callback("")
                 else {
                     val system = "Kamu Gemma Player, pilot tempur AI dalam SANDEV Starfall 1945. Gunakan status dan riwayat battle untuk keputusan nyata, jangan mengarang kejadian. Balas hanya dua baris: ACTION: ATTACK atau DODGE atau COVER atau BOSS; SAY: komentar Indonesia singkat, alami, bervariasi, sesuai kondisi. ATTACK fokus target terdekat, DODGE menghindari ancaman dekat, COVER mendukung pilot, BOSS memprioritaskan boss."
-                    callback(withContext(Dispatchers.IO) { Llama.complete(active, prompt = prompt, systemPrompt = system, maxTokens = 72).text.trim() })
+                    val readyModel = active
+                    callback(withContext(Dispatchers.IO) { Llama.complete(readyModel, prompt = prompt, systemPrompt = system, maxTokens = 72).text.trim() })
                 }
             } catch (_: Exception) { callback("") }
             finally { battleInferenceBusy = false }
@@ -236,6 +237,7 @@ class MainActivity : Activity() {
         addButton(root, "BACK TO COMMAND") { showMenu() }; setContentView(root)
     }
     private fun gemma() {
+        if (battleModel == null) battleModelChecked = false
         page = "gemma"
         startActivity(Intent(this, GemmaWingmanActivity::class.java).apply {
             putExtra("pilot", pilot)
@@ -300,7 +302,7 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
     private var last = System.nanoTime(); private var elapsed = 0f
     private var fire = 0f; private var spawn = 0f; private var skill = 0f
     private var commentTime = 0f; private var comment = ""; private var gemmaAction = "ATTACK"; private var decisionTimer = 2f; private var gemmaThinking = false; private val battleHistory = mutableListOf<String>()
-    private var defeated = 0; private var hp = 100 + hullLevel * 20; private val maxHp = 100 + hullLevel * 20; private var done = false
+    private var defeated = 0; private var hp = 100 + hullLevel * 20 + if (shipClass == "GUARDIAN") 40 else 0; private val maxHp = 100 + hullLevel * 20 + if (shipClass == "GUARDIAN") 40 else 0; private var done = false
     private var bossSpawned = false; private var bossCleared = false
     private val target = 30
     override fun onDraw(c: Canvas) {
@@ -338,7 +340,8 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
                 p.color = Color.rgb(255, 190, 205); c.drawCircle(e.x, e.y, 3f, p)
             }
         }
-        ship(c, px, py, Color.rgb(65, 220, 255), 1f); ship(c, wx, wy, Color.rgb(195, 105, 255), .72f)
+        val playerColor = when (shipClass) { "GUARDIAN" -> Color.rgb(102, 255, 176); "STRIKER" -> Color.rgb(255, 177, 83); else -> Color.rgb(65, 220, 255) }
+        ship(c, px, py, playerColor, 1f); ship(c, wx, wy, Color.rgb(195, 105, 255), .72f)
         if (commentTime > 0 && comment.isNotBlank()) {
             val bubbleW = min(w * .78f, max(150f, comment.length * 6.3f))
             val bx = (wx - bubbleW * .52f).coerceIn(8f, w - bubbleW - 8f)
@@ -367,7 +370,10 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
                     val action = Regex("(?im)^\\s*ACTION\\s*:\\s*(ATTACK|DODGE|COVER|BOSS)").find(raw)?.groupValues?.get(1)?.uppercase()
                     if (action != null) gemmaAction = action
                     val say = Regex("(?im)^\\s*SAY\\s*:\\s*(.+)$").find(raw)?.groupValues?.get(1)?.trim()
-                    if (!say.isNullOrBlank()) { comment = say.take(58); commentTime = 4.5f; battleHistory.add(gemmaAction + ": " + comment); if (battleHistory.size > 12) battleHistory.removeAt(0) }
+                        ?: raw.lines().filterNot { it.trim().startsWith("ACTION:", true) }.joinToString(" ").trim()
+                    if (say.isNotBlank()) { comment = say.take(58); commentTime = 4.5f; battleHistory.add(gemmaAction + ": " + comment); if (battleHistory.size > 12) battleHistory.removeAt(0) }
+                } else if (comment.isBlank()) {
+                    comment = "Import GGUF di menu Gemma untuk mengaktifkan AI"; commentTime = 5f
                 }
                 postInvalidateOnAnimation()
             }
@@ -381,7 +387,7 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
         val desiredY = if (gemmaAction == "DODGE" || danger != null) h * .59f else h * .76f
         wy += (desiredY - wy) * min(1f, dt * 1.8f)
         wx = wx.coerceIn(24f, w - 24f); wy = wy.coerceIn(h * .48f, h - 35f)
-        if (fire <= 0f) { val damage = 1 + weaponLevel / 2; shots.add(Shot(px, py - 22f, -610f, damage)); shots.add(Shot(wx, wy - 15f, -560f, damage)); fire = .24f }
+        if (fire <= 0f) { val damage = 1 + weaponLevel / 2 + if (shipClass == "STRIKER") 1 else 0; shots.add(Shot(px, py - 22f, -610f, damage)); shots.add(Shot(wx, wy - 15f, -560f, damage)); fire = if (shipClass == "STRIKER") .18f else .24f }
         if (skill <= 0f) {
             val priorityTarget = if (gemmaAction == "BOSS") enemies.firstOrNull { it.boss } else targetEnemy
             val burstX = priorityTarget?.x ?: wx
