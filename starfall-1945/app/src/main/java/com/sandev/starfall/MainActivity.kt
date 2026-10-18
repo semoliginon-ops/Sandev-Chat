@@ -175,13 +175,30 @@ class MainActivity : ComponentActivity() {
         page = "skills"
         val skillLevel = prefs.getInt("skill_burst", 1)
         val cost = 100 + skillLevel * 100
-        val root = layout("SKILL LAB", "BATTLE ABILITIES • LEVEL " + skillLevel)
-        root.addView(text("LASER BURST\nGemma menembakkan salvo tambahan.\nLevel skill: " + skillLevel, 15f))
-        root.addView(text("Upgrade berikutnya: " + cost + " credits • Saldo: " + credits, 13f))
-        addButton(root, "UPGRADE LASER BURST — " + cost + " CREDITS") {
+        val root = layout("SKILL LAB", "SKILLS UNLOCK GRADUALLY • PILOT LV $level • STAGE $stage")
+        val scroll = ScrollView(this).apply { isFillViewport = true }
+        val items = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        scroll.addView(items)
+        fun line(name: String, description: String, unlockLevel: Int, unlockStage: Int) {
+            val open = level >= unlockLevel || stage >= unlockStage
+            items.addView(text((if (open) "✓ UNLOCKED" else "🔒 UNLOCK AT LV $unlockLevel OR STAGE $unlockStage") + "\n$name\n$description", 13f))
+        }
+        items.addView(text("PLAYER SKILLS", 15f))
+        line("LASER BURST", "Rentetan laser; damage meningkat dengan upgrade.", 1, 1)
+        line("SHIELD PULSE", "Perisai sementara untuk menahan tembakan musuh.", 3, 3)
+        line("HOMING MISSILES", "Rudal mengejar target secara otomatis.", 5, 5)
+        line("ULTIMATE: NOVA BREAK", "Serangan area besar dan membersihkan proyektil.", 8, 8)
+        items.addView(text("GEMMA WINGMAN SKILLS", 15f))
+        line("COVER FIRE", "Salvo cepat untuk menekan musuh.", 1, 1)
+        line("TARGET LOCK", "Mengunci target dan memperkuat tembakan Gemma.", 2, 2)
+        line("EVASIVE MANEUVER", "Gerakan menghindar cepat saat ada ancaman.", 4, 4)
+        line("COORDINATED STRIKE", "Serangan gabungan player + Gemma.", 7, 7)
+        items.addView(text("LASER BURST UPGRADE: LV $skillLevel\nUpgrade berikutnya: $cost credits • Saldo: $credits", 13f))
+        addButton(items, "UPGRADE LASER BURST — $cost CREDITS") {
             if (credits >= cost) { credits -= cost; prefs.edit().putInt("skill_burst", skillLevel + 1).apply(); save(); skillLab() }
             else info("NOT ENOUGH CREDITS", "Selesaikan campaign untuk memperoleh credits.")
         }
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         addButton(root, "BACK TO COMMAND") { showMenu() }
         setContentView(root)
     }
@@ -222,7 +239,7 @@ class MainActivity : ComponentActivity() {
                 }
                 if (active == null || !active.isLoaded) callback("")
                 else {
-                    val system = "Kamu Gemma, wingman AI asli di SANDEV Starfall 1945. Kamu sendiri yang memilih aksi berdasarkan status battle; jangan pernah mengarang kejadian. Balas WAJIB dua baris saja dengan format persis: ACTION: ATTACK atau DODGE atau COVER atau BOSS atau SKILL; baris kedua SAY: komentar pendek bahasa Indonesia. ATTACK menyerang musuh terdekat, DODGE menghindari bahaya, COVER mendekati pilot, BOSS fokus boss, SKILL memakai salvo jika siap. Jangan tulis analisis atau format lain."
+                    val system = "Kamu Gemma, wingman AI lokal di SANDEV Starfall 1945. Pilih aksi dari status battle dan hanya gunakan skill yang dinyatakan terbuka di status. Balas dua baris: ACTION: ATTACK atau DODGE atau COVER atau BOSS atau TARGET_LOCK atau COVER_FIRE atau EVADE atau COORDINATED; baris kedua SAY: komentar pendek bahasa Indonesia. ATTACK menyerang, DODGE menghindari bahaya, COVER mendekati pilot, BOSS fokus boss, TARGET_LOCK mengunci target, COVER_FIRE menembak salvo, EVADE menghindar cepat, COORDINATED serangan gabungan. Jangan tulis analisis atau format lain."
                     val readyModel = active
                     callback(withContext(Dispatchers.IO) { Llama.complete(readyModel, prompt = prompt, systemPrompt = system, maxTokens = 96).text.trim() })
                 }
@@ -273,7 +290,7 @@ class MainActivity : ComponentActivity() {
     }
     private fun battle() {
         page = "battle"
-        setContentView(ShooterView(this, weapon, hull, stage, prefs.getString("ship_class", "NOVA") ?: "NOVA", prefs.getInt("skill_burst", 1), { prompt, callback -> requestBattleGemma(prompt, callback) }) { won, xpGain, creditGain, count ->
+        setContentView(ShooterView(this, weapon, hull, stage, level, prefs.getString("ship_class", "NOVA") ?: "NOVA", prefs.getInt("skill_burst", 1), { prompt, callback -> requestBattleGemma(prompt, callback) }) { won, xpGain, creditGain, count ->
             reward(xpGain, creditGain); kills += count
             if (won) stage++
             save()
@@ -305,8 +322,8 @@ private class LogoView(context: Context) : View(context) {
     }
 }
 
-private class ShooterView(context: Context, private val weaponLevel: Int, private val hullLevel: Int, private val stageNumber: Int, private val shipClass: String, private val skillLevel: Int, private val askGemma: (String, (String) -> Unit) -> Unit, val onClear: (Boolean, Int, Int, Int) -> Unit) : View(context) {
-    private data class Shot(var x: Float, var y: Float, var speed: Float, var damage: Int)
+private class ShooterView(context: Context, private val weaponLevel: Int, private val hullLevel: Int, private val stageNumber: Int, private val pilotLevel: Int, private val shipClass: String, private val skillLevel: Int, private val askGemma: (String, (String) -> Unit) -> Unit, val onClear: (Boolean, Int, Int, Int) -> Unit) : View(context) {
+    private data class Shot(var x: Float, var y: Float, var speed: Float, var damage: Int, val homing: Boolean = false)
     private data class Enemy(var x: Float, var y: Float, var hp: Int, var speed: Float, val boss: Boolean = false, val kind: Int = 0, var fireTimer: Float = 1f)
     private data class EnemyShot(var x: Float, var y: Float, var vx: Float, var vy: Float, val damage: Int)
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -314,8 +331,14 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
     private val stars = List(85) { floatArrayOf(Random.nextFloat(), Random.nextFloat(), Random.nextFloat() * 2f + 1f) }
     private var px = 0f; private var py = 0f; private var wx = 0f; private var wy = 0f
     private var last = System.nanoTime(); private var elapsed = 0f
-    private var fire = 0f; private var spawn = 0f; private var skill = 0f
-    private var commentTime = 0f; private var comment = ""; private var gemmaAction = "WAIT"; private var decisionTimer = .35f; private var gemmaThinking = false; private var bossFireTimer = 1.1f; private val battleHistory = mutableListOf<String>()
+    private var fire = 0f; private var gemmaFire = 0f; private var spawn = 0f
+    private val playerSkillCooldowns = FloatArray(4)
+    private var shieldTimer = 0f; private var targetLockTimer = 0f; private var coverFireTimer = 0f; private var evadeTimer = 0f
+    private var flashTimer = 0f; private var gemmaSkillCooldown = 0f
+    private var commentTime = 0f; private var comment = ""; private var gemmaAction = "ATTACK"; private var decisionTimer = .35f; private var gemmaThinking = false; private var bossFireTimer = 1.1f
+    private var secondsWithoutValidDecision = 0f; private var systemTakeover = false; private var autoPilotTimer = 0f
+    private var touchStartedInControls = false
+    private val battleHistory = mutableListOf<String>()
     private var defeated = 0; private var hp = 100 + hullLevel * 20 + if (shipClass == "GUARDIAN") 40 else 0; private val maxHp = 100 + hullLevel * 20 + if (shipClass == "GUARDIAN") 40 else 0; private var done = false
     private var bossSpawned = false; private var bossCleared = false
     private val target = 30
@@ -339,9 +362,9 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
         p.color = Color.rgb(182, 205, 232); p.textSize = 11f
         c.drawText(if (bossSpawned && !bossCleared) "BOSS ENGAGED" else "HOSTILES $defeated/$target", 17f, 59f, p)
         shots.forEach { shot ->
-            p.color = Color.argb(85, 70, 235, 255); c.drawCircle(shot.x, shot.y + 5f, 9f, p)
-            p.color = if (shot.damage > 1) Color.rgb(255, 205, 105) else Color.rgb(120, 250, 255)
-            p.strokeWidth = if (shot.damage > 1) 7f else 5f
+            p.color = Color.argb(85, 70, 235, 255); c.drawCircle(shot.x, shot.y + 5f, if (shot.homing) 12f else 9f, p)
+            p.color = when { shot.homing -> Color.rgb(255, 160, 55); shot.damage > 1 -> Color.rgb(255, 205, 105); else -> Color.rgb(120, 250, 255) }
+            p.strokeWidth = if (shot.homing) 8f else if (shot.damage > 1) 7f else 5f
             c.drawLine(shot.x, shot.y - 4f, shot.x, shot.y + 19f, p)
         }
         enemyShots.forEach { shot ->
@@ -369,7 +392,18 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
             }
         }
         val playerColor = when (shipClass) { "GUARDIAN" -> Color.rgb(102, 255, 176); "STRIKER" -> Color.rgb(255, 177, 83); else -> Color.rgb(65, 220, 255) }
+        if (shieldTimer > 0f) {
+            p.color = Color.argb(90, 65, 220, 255); p.style = Paint.Style.STROKE; p.strokeWidth = 5f
+            c.drawCircle(px, py, 43f, p); p.style = Paint.Style.FILL
+            p.color = Color.argb(35, 95, 235, 255); c.drawCircle(px, py, 39f, p)
+        }
+        if (evadeTimer > 0f) {
+            p.color = Color.argb(85, 210, 120, 255); p.style = Paint.Style.STROKE; p.strokeWidth = 4f
+            c.drawCircle(wx, wy, 38f, p); p.style = Paint.Style.FILL
+        }
         ship(c, px, py, playerColor, 1.55f, false); ship(c, wx, wy, Color.rgb(195, 105, 255), 1.38f, true)
+        drawSkillControls(c, w, h)
+        if (flashTimer > 0f) { p.color = Color.argb((flashTimer / .25f * 70f).toInt().coerceIn(0, 70), 100, 220, 255); c.drawRect(0f, 0f, w, h, p) }
         if (commentTime > 0f && comment.isNotBlank()) {
             p.textSize = 16f; p.typeface = Typeface.DEFAULT_BOLD
             val lines = comment.replace(Regex("\\s+"), " ").chunked(30).take(3)
@@ -384,45 +418,91 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
         if (!done) postInvalidateDelayed(16)
     }
     private fun update(dt: Float, w: Float, h: Float) {
-        elapsed += dt; fire -= dt; spawn -= dt; skill -= dt; commentTime -= dt; decisionTimer -= dt; bossFireTimer -= dt
-        val danger = enemies.firstOrNull { kotlin.math.abs(it.x - wx) < 52f && it.y > wy - 115f && !it.boss }
+        elapsed += dt; fire -= dt; gemmaFire -= dt; spawn -= dt; commentTime -= dt; decisionTimer -= dt; bossFireTimer -= dt
+        shieldTimer = max(0f, shieldTimer - dt); targetLockTimer = max(0f, targetLockTimer - dt)
+        coverFireTimer = max(0f, coverFireTimer - dt); evadeTimer = max(0f, evadeTimer - dt); flashTimer = max(0f, flashTimer - dt)
+        gemmaSkillCooldown = max(0f, gemmaSkillCooldown - dt)
+        for (i in playerSkillCooldowns.indices) playerSkillCooldowns[i] = max(0f, playerSkillCooldowns[i] - dt)
+        secondsWithoutValidDecision += dt
+        if (!systemTakeover && secondsWithoutValidDecision >= 8f) {
+            systemTakeover = true; autoPilotTimer = 0f
+            comment = "SYSTEM OVERRIDE: Gemma nge-lag. Biar aku yang urus dulu!"; commentTime = 4.5f
+            battleHistory.add("System mengambil alih kendali Gemma.")
+        }
+        val danger = enemies.firstOrNull { kotlin.math.abs(it.x - wx) < 72f && it.y > wy - 145f && !it.boss }
         val targetEnemy = if (gemmaAction == "BOSS") enemies.firstOrNull { it.boss }
             else enemies.minByOrNull { kotlin.math.abs(it.x - wx) + kotlin.math.abs(it.y - wy) * .55f }
         if (decisionTimer <= 0f && !gemmaThinking) {
             gemmaThinking = true; decisionTimer = 4.2f
             val nearest = targetEnemy?.let { if (it.boss) "DREADNOUGHT boss HP " + it.hp else "enemy HP " + it.hp + ", x=" + it.x.toInt() + ", y=" + it.y.toInt() } ?: "tidak ada target dekat"
-            val state = "Stage=" + stageNumber + "; pilot hull=" + hp + "/" + maxHp + "; kills=" + defeated + "/" + target + "; Gemma action=" + gemmaAction + "; ancaman dekat=" + (danger != null) + "; target=" + nearest + "; boss=" + (bossSpawned && !bossCleared) + "; skill level=" + skillLevel + ". Riwayat: " + battleHistory.takeLast(6).joinToString(" | ") + ". Pilih keputusan untuk beberapa detik berikutnya."
+            val unlocked = buildList {
+                if (pilotLevel >= 1 || stageNumber >= 1) add("COVER_FIRE")
+                if (pilotLevel >= 2 || stageNumber >= 2) add("TARGET_LOCK")
+                if (pilotLevel >= 4 || stageNumber >= 4) add("EVADE")
+                if (pilotLevel >= 7 || stageNumber >= 7) add("COORDINATED")
+            }.joinToString(",")
+            val state = "Stage=" + stageNumber + "; pilot level=" + pilotLevel + "; hull=" + hp + "/" + maxHp + "; kills=" + defeated + "/" + target + "; action=" + gemmaAction + "; danger=" + (danger != null) + "; target=" + nearest + "; boss=" + (bossSpawned && !bossCleared) + "; Gemma skills unlocked=" + unlocked + "; skill cooldown=" + String.format(java.util.Locale.US, "%.1f", gemmaSkillCooldown) + ". Pilih keputusan valid dan SAY pendek."
             askGemma(state) { raw ->
                 gemmaThinking = false
-                if (raw.isNotBlank()) {
-                    val action = Regex("(?i)ACTION\\s*[:=\\-]?\\s*(ATTACK|DODGE|COVER|BOSS|SKILL)").find(raw)?.groupValues?.get(1)?.uppercase()
-                    if (action != null) gemmaAction = action
-                    val say = Regex("(?im)^\\s*SAY\\s*:\\s*(.+)$").find(raw)?.groupValues?.get(1)?.trim()
-                    if (say != null && say.isNotBlank()) { comment = say.take(58); commentTime = 4.5f; battleHistory.add(gemmaAction + ": " + comment); if (battleHistory.size > 12) battleHistory.removeAt(0) }
-                } else if (comment.isBlank()) {
-                    comment = ""; commentTime = 0f
+                decisionTimer = 4.2f
+                val action = Regex("(?i)ACTION\\s*[:=\\-]?\\s*(ATTACK|DODGE|COVER|BOSS|TARGET_LOCK|COVER_FIRE|EVADE|COORDINATED|SKILL)").find(raw)?.groupValues?.get(1)?.uppercase()
+                if (action != null) {
+                    secondsWithoutValidDecision = 0f
+                    if (systemTakeover) {
+                        systemTakeover = false
+                        comment = "Gemma is back! 😎🚀"; commentTime = 4.5f
+                        battleHistory.add("Gemma kembali mengambil kendali AI.")
+                    } else {
+                        val say = Regex("(?im)^\\s*SAY\\s*:\\s*(.+)$").find(raw)?.groupValues?.get(1)?.trim()
+                        if (say != null && say.isNotBlank()) { comment = say.take(58); commentTime = 4.5f; battleHistory.add("Gemma: " + comment); if (battleHistory.size > 12) battleHistory.removeAt(0) }
+                    }
+                    when (action) {
+                        "TARGET_LOCK" -> if (isGemmaSkillUnlocked(1)) activateGemmaSkill("TARGET_LOCK") else gemmaAction = "ATTACK"
+                        "COVER_FIRE" -> if (isGemmaSkillUnlocked(0)) activateGemmaSkill("COVER_FIRE") else gemmaAction = "ATTACK"
+                        "EVADE" -> if (isGemmaSkillUnlocked(2)) activateGemmaSkill("EVADE") else gemmaAction = "ATTACK"
+                        "COORDINATED", "SKILL" -> if (isGemmaSkillUnlocked(3) && gemmaSkillCooldown <= 0f) activateGemmaSkill("COORDINATED") else if (isGemmaSkillUnlocked(0) && gemmaSkillCooldown <= 0f) activateGemmaSkill("COVER_FIRE") else gemmaAction = "ATTACK"
+                        else -> gemmaAction = action
+                    }
                 }
                 postInvalidateOnAnimation()
             }
         }
+        if (systemTakeover) {
+            autoPilotTimer -= dt
+            if (autoPilotTimer <= 0f) {
+                autoPilotTimer = .72f
+                when {
+                    danger != null -> gemmaAction = "DODGE"
+                    bossSpawned && !bossCleared -> gemmaAction = "BOSS"
+                    gemmaSkillCooldown <= 0f && isGemmaSkillUnlocked(3) -> activateGemmaSkill("COORDINATED")
+                    gemmaSkillCooldown <= 0f && isGemmaSkillUnlocked(0) -> activateGemmaSkill("COVER_FIRE")
+                    else -> gemmaAction = "ATTACK"
+                }
+            }
+        }
+        if (coverFireTimer <= 0f && gemmaAction == "COVER_FIRE") gemmaAction = "ATTACK"
+        if (evadeTimer <= 0f && gemmaAction == "EVADE") gemmaAction = "ATTACK"
         val desiredX = when (gemmaAction) {
             "COVER" -> px - w * .14f
-            "DODGE" -> if (danger != null) wx + if (danger.x < wx) w * .18f else -w * .18f else targetEnemy?.x ?: (px - w * .14f)
-            else -> if (gemmaAction == "WAIT") wx else (targetEnemy?.x ?: (px - w * .18f))
+            "DODGE", "EVADE" -> if (danger != null) wx + if (danger.x < wx) w * .18f else -w * .18f else targetEnemy?.x ?: (px - w * .14f)
+            else -> targetEnemy?.x ?: (px - w * .18f)
         }
-        wx += (desiredX.coerceIn(w * .12f, w * .88f) - wx) * min(1f, dt * 2.8f)
-        val desiredY = if (gemmaAction == "WAIT") wy else if (gemmaAction == "DODGE" || danger != null) h * .59f else h * .76f
-        wy += (desiredY - wy) * min(1f, dt * 1.8f)
-        wx = wx.coerceIn(24f, w - 24f); wy = wy.coerceIn(h * .48f, h - 35f)
-        if (fire <= 0f) { val damage = 1 + weaponLevel / 2 + if (shipClass == "STRIKER") 1 else 0; shots.add(Shot(px, py - 22f, -610f, damage)); if (gemmaAction != "WAIT") shots.add(Shot(wx, wy - 15f, -560f, damage)); fire = if (shipClass == "STRIKER") .18f else .24f }
-        if (skill <= 0f && gemmaAction == "SKILL") {
-            val priorityTarget = if (gemmaAction == "BOSS" || gemmaAction == "SKILL") enemies.firstOrNull { it.boss } ?: targetEnemy else targetEnemy
-            val burstX = priorityTarget?.x ?: wx
-            repeat(2 + skillLevel.coerceAtMost(5)) { i ->
-                val spread = (i - ((1 + skillLevel.coerceAtMost(5)) / 2)) * 14f
-                shots.add(Shot(burstX + spread, wy - 18f, -650f, 2 + weaponLevel / 3 + skillLevel / 3))
+        wx += (desiredX.coerceIn(w * .12f, w * .88f) - wx) * min(1f, dt * if (evadeTimer > 0f || gemmaAction == "DODGE") 5f else 2.8f)
+        val desiredY = if (gemmaAction == "DODGE" || gemmaAction == "EVADE" || danger != null) h * .57f else h * .73f
+        wy += (desiredY - wy) * min(1f, dt * 2.4f)
+        wx = wx.coerceIn(24f, w - 24f); wy = wy.coerceIn(h * .43f, h - 125f)
+        val damage = 1 + weaponLevel / 2 + if (shipClass == "STRIKER") 1 else 0
+        if (fire <= 0f) { shots.add(Shot(px, py - 22f, -610f, damage)); fire = if (shipClass == "STRIKER") .18f else .24f }
+        if (gemmaFire <= 0f) {
+            val targetX = targetEnemy?.x ?: wx
+            val gemmaDamage = damage + if (targetLockTimer > 0f) 2 else 0
+            if (coverFireTimer > 0f || gemmaAction == "COVER_FIRE") {
+                repeat(3) { i -> shots.add(Shot(wx + (i - 1) * 12f, wy - 18f, -600f, gemmaDamage + 1)) }
+                gemmaFire = .24f
+            } else {
+                shots.add(Shot(wx + (targetX - wx) * .08f, wy - 15f, -560f, gemmaDamage))
+                gemmaFire = .38f
             }
-            skill = if (enemies.any { it.boss }) 3.5f else max(2.5f, 5f - skillLevel * .15f)
         }
         if (spawn <= 0f && enemies.size < 8 && defeated < target) {
             val typeHp = (3 + stageNumber / 3 + weaponLevel / 3).coerceAtMost(16)
@@ -472,15 +552,20 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
                 if (e.y > h + 20f) { e.hp = 0; hp = max(0, hp - 5); battleHistory.add("Musuh lolos; hull turun 5.") }
             }
         }
-        shots.forEach { it.y += it.speed * dt }
         enemyShots.forEach { it.x += it.vx * dt; it.y += it.vy * dt }
         enemyShots.removeAll { it.x < -20f || it.x > w + 20f || it.y < -20f || it.y > h + 20f }
         val bulletHits = enemyShots.filter { abs(it.x - px) < 27f && abs(it.y - py) < 31f }
         if (bulletHits.isNotEmpty()) {
-            hp = max(0, hp - bulletHits.sumOf { it.damage })
+            if (shieldTimer <= 0f) { hp = max(0, hp - bulletHits.sumOf { it.damage }); battleHistory.add("Peluru musuh mengenai pesawat pemain") }
+            else battleHistory.add("Shield Pulse menahan tembakan musuh.")
             enemyShots.removeAll(bulletHits.toSet())
-            battleHistory.add("Peluru musuh mengenai pesawat pemain")
         }
+        shots.filter { it.homing }.forEach { shot ->
+            val target = enemies.minByOrNull { abs(it.x - shot.x) + abs(it.y - shot.y) * .45f }
+            if (target != null) shot.x += (target.x - shot.x) * min(1f, dt * 4.5f)
+            shot.y += shot.speed * dt
+        }
+        shots.filter { !it.homing }.forEach { it.y += it.speed * dt }
         shots.removeAll { it.y < -30f }
         val hit = mutableSetOf<Shot>(); val dead = mutableSetOf<Enemy>()
         enemies.forEach { e -> shots.forEach { shot ->
@@ -494,6 +579,77 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
         if (hp <= 0) { done = true; onClear(false, max(10, defeated * 5), max(15, defeated * 4), defeated + if (bossCleared) 1 else 0) }
         else if (defeated >= target && bossCleared && enemies.isEmpty()) { done = true; onClear(true, 180 + stageNumber * 12 + defeated * 6, 150 + stageNumber * 8 + defeated * 5, defeated + 1) }
     }
+    private fun isPlayerSkillUnlocked(i: Int) = when (i) {
+        0 -> pilotLevel >= 1 || stageNumber >= 1
+        1 -> pilotLevel >= 3 || stageNumber >= 3
+        2 -> pilotLevel >= 5 || stageNumber >= 5
+        else -> pilotLevel >= 8 || stageNumber >= 8
+    }
+    private fun isGemmaSkillUnlocked(i: Int) = when (i) {
+        0 -> pilotLevel >= 1 || stageNumber >= 1
+        1 -> pilotLevel >= 2 || stageNumber >= 2
+        2 -> pilotLevel >= 4 || stageNumber >= 4
+        else -> pilotLevel >= 7 || stageNumber >= 7
+    }
+    private fun activateGemmaSkill(which: String) {
+        if (gemmaSkillCooldown > 0f) { gemmaAction = "ATTACK"; return }
+        gemmaSkillCooldown = 5f
+        when (which) {
+            "TARGET_LOCK" -> { targetLockTimer = 3.2f; if (!systemTakeover && commentTime <= 0f) { comment = "Target lock! Aku tandai targetnya."; commentTime = 3.5f }; gemmaAction = "ATTACK" }
+            "COVER_FIRE" -> { coverFireTimer = 3.2f; if (!systemTakeover && commentTime <= 0f) { comment = "Cover fire! Jangan sampai lolos!"; commentTime = 3.5f }; gemmaAction = "COVER_FIRE" }
+            "EVADE" -> { evadeTimer = 2.5f; if (!systemTakeover && commentTime <= 0f) { comment = "Evasive maneuver!"; commentTime = 3.5f }; gemmaAction = "EVADE" }
+            "COORDINATED" -> {
+                val target = enemies.firstOrNull { it.boss } ?: enemies.minByOrNull { abs(it.x - wx) + abs(it.y - wy) * .5f }
+                val center = target?.x ?: width.toFloat() * .5f
+                repeat(5) { i -> val spread = (i - 2) * 15f; shots.add(Shot(px + spread, py - 18f, -680f, 5 + weaponLevel / 2)); shots.add(Shot(center + spread, wy - 18f, -700f, 5 + weaponLevel / 2)) }
+                if (!systemTakeover && commentTime <= 0f) { comment = "COORDINATED STRIKE!"; commentTime = 3.8f }
+                gemmaAction = "ATTACK"
+            }
+        }
+        battleHistory.add("Gemma skill: $which")
+    }
+    private fun castPlayerSkill(i: Int) {
+        if (i !in 0..3 || !isPlayerSkillUnlocked(i) || playerSkillCooldowns[i] > 0f) return
+        playerSkillCooldowns[i] = 5f
+        when (i) {
+            0 -> { val n = 5 + skillLevel.coerceAtMost(5); repeat(n) { j -> shots.add(Shot(px + (j - (n - 1) / 2f) * 11f, py - 20f, -660f, 2 + weaponLevel / 2 + skillLevel / 2)) }; comment = "LASER BURST!"; commentTime = 2.2f }
+            1 -> { shieldTimer = 2.5f; comment = "Shield Pulse aktif!"; commentTime = 2.5f }
+            2 -> { repeat(3) { j -> shots.add(Shot(px + (j - 1) * 17f, py - 20f, -470f, 5 + weaponLevel + skillLevel, true)) }; comment = "Homing missiles — target locked!"; commentTime = 2.8f }
+            3 -> {
+                val damage = min(160, 45 + weaponLevel * 6 + pilotLevel / 8)
+                val dead = enemies.filter { it.hp - damage <= 0 }
+                enemies.forEach { it.hp -= damage }
+                dead.forEach { e -> if (e.boss) { bossCleared = true; bossSpawned = true; battleHistory.add("Nova Break menghancurkan boss.") } else defeated++ }
+                enemies.removeAll(dead.toSet()); enemyShots.clear(); flashTimer = .25f
+                comment = "NOVA BREAK!! Serangan pamungkas!"; commentTime = 3.2f
+            }
+        }
+        battleHistory.add("Player skill: " + listOf("LASER BURST", "SHIELD PULSE", "HOMING MISSILES", "NOVA BREAK")[i])
+        postInvalidateOnAnimation()
+    }
+    private fun drawSkillControls(c: Canvas, w: Float, h: Float) {
+        val names = arrayOf("LASER", "SHIELD", "MISSILE", "ULTIMATE")
+        for (i in 0..3) {
+            val col = i % 2; val row = i / 2
+            val left = if (col == 0) 10f else w * .5f + 3f
+            val right = if (col == 0) w * .5f - 3f else w - 10f
+            val top = h - 88f + row * 37f; val bottom = top + 32f
+            val open = isPlayerSkillUnlocked(i)
+            p.color = when { !open -> Color.argb(220, 32, 38, 57); playerSkillCooldowns[i] > 0f -> Color.argb(230, 73, 47, 61); else -> Color.argb(230, 18, 67, 91) }
+            c.drawRoundRect(left, top, right, bottom, 9f, 9f, p)
+            p.color = when { !open -> Color.rgb(90, 100, 120); playerSkillCooldowns[i] > 0f -> Color.rgb(255, 150, 140); else -> Color.rgb(100, 225, 255) }
+            p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f; c.drawRoundRect(left, top, right, bottom, 9f, 9f, p); p.style = Paint.Style.FILL
+            p.textSize = 11f; p.typeface = Typeface.DEFAULT_BOLD
+            val label = when { !open -> names[i] + " • LV " + listOf(1, 3, 5, 8)[i]; playerSkillCooldowns[i] > 0f -> names[i] + " • " + String.format(java.util.Locale.US, "%.1f", playerSkillCooldowns[i]) + "s"; else -> names[i] + " • READY" }
+            p.color = if (open && playerSkillCooldowns[i] <= 0f) Color.WHITE else Color.LTGRAY
+            c.drawText(label, left + 8f, top + 20f, p)
+        }
+    }
+    private fun skillAt(x: Float, y: Float): Int {
+        val row = when { y >= height - 88f && y <= height - 56f -> 0; y >= height - 51f && y <= height - 19f -> 1; else -> return -1 }
+        if (x < 10f || x > width - 10f) return -1
+        return row * 2 + if (x < width * .5f) 0 else 1
+    }
     private fun ship(c: Canvas, x: Float, y: Float, color: Int, scale: Float, wingman: Boolean) {
         c.save(); c.translate(x, y); c.scale(scale, scale)
         p.color = Color.argb(100, Color.red(color), Color.green(color), Color.blue(color)); c.drawCircle(0f, 0f, 25f, p)
@@ -502,9 +658,19 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
         p.color = Color.rgb(18, 33, 64); val hull = Path().apply { moveTo(0f, -48f); lineTo(12f, -15f); lineTo(10f, 22f); lineTo(0f, 34f); lineTo(-10f, 22f); lineTo(-12f, -15f); close() }; c.drawPath(hull, p); if (wingman) { p.color = Color.rgb(248, 220, 255); c.drawCircle(0f, -1f, 6f, p); p.color = Color.rgb(170, 75, 255); c.drawCircle(0f, -1f, 3f, p) } else { p.color = Color.WHITE; c.drawCircle(0f, -5f, 4f, p) }; c.restore()
     }
     override fun onTouchEvent(e: MotionEvent): Boolean {
-        if (e.action == MotionEvent.ACTION_DOWN || e.action == MotionEvent.ACTION_MOVE) {
-            px = e.x.coerceIn(28f, width - 28f); py = e.y.coerceIn(height * .42f, height - 45f)
-            /* Gemma Player repositions autonomously using its tactical AI. */
+        when (e.action) {
+            MotionEvent.ACTION_DOWN -> {
+                touchStartedInControls = skillAt(e.x, e.y) >= 0
+                if (!touchStartedInControls) { px = e.x.coerceIn(28f, width - 28f); py = e.y.coerceIn(height * .35f, height - 135f) }
+                postInvalidateOnAnimation()
+            }
+            MotionEvent.ACTION_MOVE -> if (!touchStartedInControls) { px = e.x.coerceIn(28f, width - 28f); py = e.y.coerceIn(height * .35f, height - 135f) }
+            MotionEvent.ACTION_UP -> {
+                if (touchStartedInControls) castPlayerSkill(skillAt(e.x, e.y))
+                else { px = e.x.coerceIn(28f, width - 28f); py = e.y.coerceIn(height * .35f, height - 135f) }
+                touchStartedInControls = false; postInvalidateOnAnimation()
+            }
+            MotionEvent.ACTION_CANCEL -> touchStartedInControls = false
         }
         return true
     }
