@@ -173,32 +173,9 @@ class MainActivity : ComponentActivity() {
     }
     private fun skillLab() {
         page = "skills"
-        val skillLevel = prefs.getInt("skill_burst", 1)
-        val cost = 100 + skillLevel * 100
-        val root = layout("SKILL LAB", "SKILLS UNLOCK GRADUALLY • PILOT LV $level • STAGE $stage")
-        val scroll = ScrollView(this).apply { isFillViewport = true }
-        val items = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        scroll.addView(items)
-        fun line(name: String, description: String, unlockLevel: Int, unlockStage: Int) {
-            val open = level >= unlockLevel || stage >= unlockStage
-            items.addView(text((if (open) "✓ UNLOCKED" else "🔒 UNLOCK AT LV $unlockLevel OR STAGE $unlockStage") + "\n$name\n$description", 13f))
-        }
-        items.addView(text("PLAYER SKILLS", 15f))
-        line("LASER BURST", "Rentetan laser; damage meningkat dengan upgrade.", 1, 1)
-        line("SHIELD PULSE", "Perisai sementara untuk menahan tembakan musuh.", 3, 3)
-        line("HOMING MISSILES", "Rudal mengejar target secara otomatis.", 5, 5)
-        line("ULTIMATE: NOVA BREAK", "Serangan area besar dan membersihkan proyektil.", 8, 8)
-        items.addView(text("GEMMA WINGMAN SKILLS", 15f))
-        line("COVER FIRE", "Salvo cepat untuk menekan musuh.", 1, 1)
-        line("TARGET LOCK", "Mengunci target dan memperkuat tembakan Gemma.", 2, 2)
-        line("EVASIVE MANEUVER", "Gerakan menghindar cepat saat ada ancaman.", 4, 4)
-        line("COORDINATED STRIKE", "Serangan gabungan player + Gemma.", 7, 7)
-        items.addView(text("LASER BURST UPGRADE: LV $skillLevel\nUpgrade berikutnya: $cost credits • Saldo: $credits", 13f))
-        addButton(items, "UPGRADE LASER BURST — $cost CREDITS") {
-            if (credits >= cost) { credits -= cost; prefs.edit().putInt("skill_burst", skillLevel + 1).apply(); save(); skillLab() }
-            else info("NOT ENOUGH CREDITS", "Selesaikan campaign untuk memperoleh credits.")
-        }
-        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        val root = layout("SKILL LAB", "PILOT LV $level • STAGE $stage")
+        root.addView(text("AUTO AREA BOMB\n\nMeledak otomatis setiap 5 detik. Tidak perlu tombol atau input.\n\nArea ledakan bertambah setiap 20 level: LV 1–19 area awal, LV 20–39 area lebih luas, dan seterusnya. Damage ikut meningkat perlahan seiring level pilot.", 15f))
+        root.addView(text("GEMMA • AUTO COVER FIRE\n\nGemma tetap menembak otomatis sambil bergerak menghindari ancaman. Skill AI yang tersedia dipakai otomatis saat keputusan valid diterima.", 14f))
         addButton(root, "BACK TO COMMAND") { showMenu() }
         setContentView(root)
     }
@@ -290,7 +267,7 @@ class MainActivity : ComponentActivity() {
     }
     private fun battle() {
         page = "battle"
-        setContentView(ShooterView(this, weapon, hull, stage, level, prefs.getString("ship_class", "NOVA") ?: "NOVA", prefs.getInt("skill_burst", 1), { prompt, callback -> requestBattleGemma(prompt, callback) }) { won, xpGain, creditGain, count ->
+        setContentView(ShooterView(this, weapon, hull, stage, level, prefs.getString("ship_class", "NOVA") ?: "NOVA", { prompt, callback -> requestBattleGemma(prompt, callback) }) { won, xpGain, creditGain, count ->
             reward(xpGain, creditGain); kills += count
             if (won) stage++
             save()
@@ -322,7 +299,7 @@ private class LogoView(context: Context) : View(context) {
     }
 }
 
-private class ShooterView(context: Context, private val weaponLevel: Int, private val hullLevel: Int, private val stageNumber: Int, private val pilotLevel: Int, private val shipClass: String, private val skillLevel: Int, private val askGemma: (String, (String) -> Unit) -> Unit, val onClear: (Boolean, Int, Int, Int) -> Unit) : View(context) {
+private class ShooterView(context: Context, private val weaponLevel: Int, private val hullLevel: Int, private val stageNumber: Int, private val pilotLevel: Int, private val shipClass: String, private val askGemma: (String, (String) -> Unit) -> Unit, val onClear: (Boolean, Int, Int, Int) -> Unit) : View(context) {
     private data class Shot(var x: Float, var y: Float, var speed: Float, var damage: Int, val homing: Boolean = false)
     private data class Enemy(var x: Float, var y: Float, var hp: Int, var speed: Float, val boss: Boolean = false, val kind: Int = 0, var fireTimer: Float = 1f)
     private data class EnemyShot(var x: Float, var y: Float, var vx: Float, var vy: Float, val damage: Int)
@@ -332,12 +309,11 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
     private var px = 0f; private var py = 0f; private var wx = 0f; private var wy = 0f
     private var last = System.nanoTime(); private var elapsed = 0f
     private var fire = 0f; private var gemmaFire = 0f; private var spawn = 0f
-    private val playerSkillCooldowns = FloatArray(4)
     private var shieldTimer = 0f; private var targetLockTimer = 0f; private var coverFireTimer = 0f; private var evadeTimer = 0f
     private var flashTimer = 0f; private var gemmaSkillCooldown = 0f
+    private var bombCooldown = 5f; private var bombEffectTimer = 0f; private var bombX = 0f; private var bombY = 0f; private var bombRadius = 64f
     private var commentTime = 0f; private var comment = ""; private var gemmaAction = "ATTACK"; private var decisionTimer = .35f; private var gemmaThinking = false; private var bossFireTimer = 1.1f
     private var secondsWithoutValidDecision = 0f; private var systemTakeover = false; private var autoPilotTimer = 0f
-    private var touchStartedInControls = false
     private val battleHistory = mutableListOf<String>()
     private var defeated = 0; private var hp = 100 + hullLevel * 20 + if (shipClass == "GUARDIAN") 40 else 0; private val maxHp = 100 + hullLevel * 20 + if (shipClass == "GUARDIAN") 40 else 0; private var done = false
     private var bossSpawned = false; private var bossCleared = false
@@ -402,7 +378,17 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
             c.drawCircle(wx, wy, 38f, p); p.style = Paint.Style.FILL
         }
         ship(c, px, py, playerColor, 1.55f, false); ship(c, wx, wy, Color.rgb(195, 105, 255), 1.38f, true)
-        drawSkillControls(c, w, h)
+        if (bombEffectTimer > 0f) {
+            val progress = (bombEffectTimer / .48f).coerceIn(0f, 1f)
+            p.color = Color.argb((progress * 90f).toInt(), 255, 105, 45)
+            c.drawCircle(bombX, bombY, bombRadius * (1f - progress * .25f), p)
+            p.color = Color.argb((progress * 220f).toInt(), 255, 205, 105)
+            p.style = Paint.Style.STROKE; p.strokeWidth = 5f
+            c.drawCircle(bombX, bombY, bombRadius * (1f - progress * .18f), p)
+            p.style = Paint.Style.FILL
+            p.color = Color.argb((progress * 170f).toInt(), 255, 245, 200)
+            c.drawCircle(bombX, bombY, max(8f, bombRadius * .18f * progress), p)
+        }
         if (flashTimer > 0f) { p.color = Color.argb((flashTimer / .25f * 70f).toInt().coerceIn(0, 70), 100, 220, 255); c.drawRect(0f, 0f, w, h, p) }
         if (commentTime > 0f && comment.isNotBlank()) {
             p.textSize = 16f; p.typeface = Typeface.DEFAULT_BOLD
@@ -422,7 +408,12 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
         shieldTimer = max(0f, shieldTimer - dt); targetLockTimer = max(0f, targetLockTimer - dt)
         coverFireTimer = max(0f, coverFireTimer - dt); evadeTimer = max(0f, evadeTimer - dt); flashTimer = max(0f, flashTimer - dt)
         gemmaSkillCooldown = max(0f, gemmaSkillCooldown - dt)
-        for (i in playerSkillCooldowns.indices) playerSkillCooldowns[i] = max(0f, playerSkillCooldowns[i] - dt)
+        bombEffectTimer = max(0f, bombEffectTimer - dt)
+        bombCooldown -= dt
+        if (bombCooldown <= 0f && enemies.isNotEmpty()) {
+            autoAreaBomb(w, h)
+            bombCooldown = 5f
+        }
         secondsWithoutValidDecision += dt
         if (!systemTakeover && secondsWithoutValidDecision >= 8f) {
             systemTakeover = true; autoPilotTimer = 0f
@@ -579,12 +570,6 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
         if (hp <= 0) { done = true; onClear(false, max(10, defeated * 5), max(15, defeated * 4), defeated + if (bossCleared) 1 else 0) }
         else if (defeated >= target && bossCleared && enemies.isEmpty()) { done = true; onClear(true, 180 + stageNumber * 12 + defeated * 6, 150 + stageNumber * 8 + defeated * 5, defeated + 1) }
     }
-    private fun isPlayerSkillUnlocked(i: Int) = when (i) {
-        0 -> pilotLevel >= 1 || stageNumber >= 1
-        1 -> pilotLevel >= 3 || stageNumber >= 3
-        2 -> pilotLevel >= 5 || stageNumber >= 5
-        else -> pilotLevel >= 8 || stageNumber >= 8
-    }
     private fun isGemmaSkillUnlocked(i: Int) = when (i) {
         0 -> pilotLevel >= 1 || stageNumber >= 1
         1 -> pilotLevel >= 2 || stageNumber >= 2
@@ -608,47 +593,32 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
         }
         battleHistory.add("Gemma skill: $which")
     }
-    private fun castPlayerSkill(i: Int) {
-        if (i !in 0..3 || !isPlayerSkillUnlocked(i) || playerSkillCooldowns[i] > 0f) return
-        playerSkillCooldowns[i] = 5f
-        when (i) {
-            0 -> { val n = 5 + skillLevel.coerceAtMost(5); repeat(n) { j -> shots.add(Shot(px + (j - (n - 1) / 2f) * 11f, py - 20f, -660f, 2 + weaponLevel / 2 + skillLevel / 2)) }; comment = "LASER BURST!"; commentTime = 2.2f }
-            1 -> { shieldTimer = 2.5f; comment = "Shield Pulse aktif!"; commentTime = 2.5f }
-            2 -> { repeat(3) { j -> shots.add(Shot(px + (j - 1) * 17f, py - 20f, -470f, 5 + weaponLevel + skillLevel, true)) }; comment = "Homing missiles — target locked!"; commentTime = 2.8f }
-            3 -> {
-                val damage = min(160, 45 + weaponLevel * 6 + pilotLevel / 8)
-                val dead = enemies.filter { it.hp - damage <= 0 }
-                enemies.forEach { it.hp -= damage }
-                dead.forEach { e -> if (e.boss) { bossCleared = true; bossSpawned = true; battleHistory.add("Nova Break menghancurkan boss.") } else defeated++ }
-                enemies.removeAll(dead.toSet()); enemyShots.clear(); flashTimer = .25f
-                comment = "NOVA BREAK!! Serangan pamungkas!"; commentTime = 3.2f
-            }
+    private fun autoAreaBomb(w: Float, h: Float) {
+        val target = enemies.minByOrNull { abs(it.x - px) + abs(it.y - py) * .55f }
+        bombX = target?.x ?: px
+        bombY = target?.y ?: (py - h * .24f).coerceAtLeast(100f)
+        bombRadius = min(max(w, h) * .48f, 64f + (pilotLevel / 20) * 14f)
+        bombEffectTimer = .48f
+        flashTimer = .12f
+        val damage = 12 + pilotLevel / 5 + weaponLevel
+        val hit = enemies.filter { enemy ->
+            val dx = enemy.x - bombX; val dy = enemy.y - bombY
+            kotlin.math.sqrt(dx * dx + dy * dy) <= bombRadius + if (enemy.boss) 32f else 0f
         }
-        battleHistory.add("Player skill: " + listOf("LASER BURST", "SHIELD PULSE", "HOMING MISSILES", "NOVA BREAK")[i])
+        val dead = hit.filter { it.hp <= damage }
+        hit.forEach { it.hp -= damage }
+        dead.forEach { enemy ->
+            if (enemy.boss) { bossCleared = true; bossSpawned = true; battleHistory.add("Auto Area Bomb menghancurkan boss.") }
+            else defeated++
+        }
+        enemies.removeAll(dead.toSet())
+        enemyShots.removeAll { shot ->
+            val dx = shot.x - bombX; val dy = shot.y - bombY
+            kotlin.math.sqrt(dx * dx + dy * dy) <= bombRadius
+        }
+        comment = "AUTO AREA BOMB!"; commentTime = 1.8f
+        battleHistory.add("Auto Area Bomb • radius ${bombRadius.toInt()} • damage $damage")
         postInvalidateOnAnimation()
-    }
-    private fun drawSkillControls(c: Canvas, w: Float, h: Float) {
-        val names = arrayOf("LASER", "SHIELD", "MISSILE", "ULTIMATE")
-        for (i in 0..3) {
-            val col = i % 2; val row = i / 2
-            val left = if (col == 0) 10f else w * .5f + 3f
-            val right = if (col == 0) w * .5f - 3f else w - 10f
-            val top = h - 88f + row * 37f; val bottom = top + 32f
-            val open = isPlayerSkillUnlocked(i)
-            p.color = when { !open -> Color.argb(220, 32, 38, 57); playerSkillCooldowns[i] > 0f -> Color.argb(230, 73, 47, 61); else -> Color.argb(230, 18, 67, 91) }
-            c.drawRoundRect(left, top, right, bottom, 9f, 9f, p)
-            p.color = when { !open -> Color.rgb(90, 100, 120); playerSkillCooldowns[i] > 0f -> Color.rgb(255, 150, 140); else -> Color.rgb(100, 225, 255) }
-            p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f; c.drawRoundRect(left, top, right, bottom, 9f, 9f, p); p.style = Paint.Style.FILL
-            p.textSize = 11f; p.typeface = Typeface.DEFAULT_BOLD
-            val label = when { !open -> names[i] + " • LV " + listOf(1, 3, 5, 8)[i]; playerSkillCooldowns[i] > 0f -> names[i] + " • " + String.format(java.util.Locale.US, "%.1f", playerSkillCooldowns[i]) + "s"; else -> names[i] + " • READY" }
-            p.color = if (open && playerSkillCooldowns[i] <= 0f) Color.WHITE else Color.LTGRAY
-            c.drawText(label, left + 8f, top + 20f, p)
-        }
-    }
-    private fun skillAt(x: Float, y: Float): Int {
-        val row = when { y >= height - 88f && y <= height - 56f -> 0; y >= height - 51f && y <= height - 19f -> 1; else -> return -1 }
-        if (x < 10f || x > width - 10f) return -1
-        return row * 2 + if (x < width * .5f) 0 else 1
     }
     private fun ship(c: Canvas, x: Float, y: Float, color: Int, scale: Float, wingman: Boolean) {
         c.save(); c.translate(x, y); c.scale(scale, scale)
@@ -659,18 +629,12 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
     }
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.action) {
-            MotionEvent.ACTION_DOWN -> {
-                touchStartedInControls = skillAt(e.x, e.y) >= 0
-                if (!touchStartedInControls) { px = e.x.coerceIn(28f, width - 28f); py = e.y.coerceIn(height * .35f, height - 135f) }
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP -> {
+                px = e.x.coerceIn(28f, width - 28f)
+                py = e.y.coerceIn(height * .35f, height - 40f)
                 postInvalidateOnAnimation()
             }
-            MotionEvent.ACTION_MOVE -> if (!touchStartedInControls) { px = e.x.coerceIn(28f, width - 28f); py = e.y.coerceIn(height * .35f, height - 135f) }
-            MotionEvent.ACTION_UP -> {
-                if (touchStartedInControls) castPlayerSkill(skillAt(e.x, e.y))
-                else { px = e.x.coerceIn(28f, width - 28f); py = e.y.coerceIn(height * .35f, height - 135f) }
-                touchStartedInControls = false; postInvalidateOnAnimation()
-            }
-            MotionEvent.ACTION_CANCEL -> touchStartedInControls = false
+            MotionEvent.ACTION_CANCEL -> Unit
         }
         return true
     }
