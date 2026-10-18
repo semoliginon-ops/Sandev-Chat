@@ -6,6 +6,7 @@ import android.content.Context
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
+import android.text.InputType
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
@@ -69,6 +70,16 @@ class MainActivity : AppCompatActivity() {
     private val bots = mutableListOf<BotProfile>()
     private var activeBotId = "default"
     private var activeModelName: String? = null
+    private var activeTuneId = "default"
+    private var manualTune = SamplingTune("manual", "Manual", 0.7f, 0.9f, 40, 1.1f)
+    private val samplingPresets = listOf(
+        SamplingTune("qwen", "Qwen Tune", 0.7f, 0.8f, 20, 1.05f),
+        SamplingTune("gemma", "Gemma Tune", 1.0f, 0.95f, 64, 1.05f),
+        SamplingTune("smollm", "SmolLM Tune", 0.7f, 0.9f, 50, 1.15f),
+        SamplingTune("luminus", "Luminus Tune", 0.85f, 0.9f, 40, 1.10f),
+        SamplingTune("other", "Other Model Tune", 0.75f, 0.9f, 40, 1.10f),
+        SamplingTune("default", "Default", 0.3f, 0.95f, 40, 1.0f)
+    )
     private var pendingModelFile: File? = null
     private var themeIndex = 0
     private var profilePath: String? = null
@@ -1212,6 +1223,7 @@ class MainActivity : AppCompatActivity() {
             "＋  Impor model GGUF",
             "▤  Model tersimpan (${models.size})",
             "−  Hapus model",
+            "🎚  Model Tune (${activeTuneLabel()})",
             "⚙  Pengaturan model otomatis"
         )
         AlertDialog.Builder(this).setTitle("AI Model · Q4_K_M")
@@ -1220,9 +1232,118 @@ class MainActivity : AppCompatActivity() {
                     0 -> modelPicker.launch(arrayOf("*/*"))
                     1 -> showSavedModels(modelFiles(), false)
                     2 -> showSavedModels(modelFiles(), true)
-                    3 -> showModelSettings()
+                    3 -> showModelTuneMenu()
+                    4 -> showModelSettings()
                 }
             }.show()
+    }
+
+    private fun showModelTuneMenu() {
+        val options = samplingPresets.map { tune ->
+            val selected = if (activeTuneId == tune.id) "✓" else " "
+            "$selected  ${tune.label}  ·  T=${tune.temperature}  P=${tune.topP}  K=${tune.topK}  R=${tune.repeatPenalty}"
+        }.toMutableList()
+        options.add(if (activeTuneId == "manual") "✓  Manual · ${manualTune.temperature}/${manualTune.topP}/${manualTune.topK}/${manualTune.repeatPenalty}" else "✎  Manual · atur sendiri")
+        AlertDialog.Builder(this)
+            .setTitle("Model Tune")
+            .setMessage("Pilih Tune yang ingin dipakai. Tune tidak berubah otomatis saat model diganti.")
+            .setItems(options.toTypedArray()) { _, which ->
+                if (which == samplingPresets.size) {
+                    showManualTuneDialog()
+                } else {
+                    applySamplingTune(samplingPresets[which], samplingPresets[which].id)
+                }
+            }
+            .show()
+    }
+
+    private fun showManualTuneDialog() {
+        val initial = if (activeTuneId == "manual") manualTune else activeSamplingTune()
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+        }
+        fun addField(label: String, value: String, numericType: Int): EditText {
+            panel.addView(TextView(this).apply {
+                text = label
+                textSize = 13f
+                setPadding(0, dp(6), 0, dp(3))
+            })
+            return EditText(this).apply {
+                setSingleLine(true)
+                inputType = numericType
+                setText(value)
+                textSize = 16f
+                panel.addView(this, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
+            }
+        }
+        val decimal = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
+        val temperature = addField("Temperature (0.05–2.0)", initial.temperature.toString(), decimal)
+        val topP = addField("Top-p (0.10–1.0)", initial.topP.toString(), decimal)
+        val topK = addField("Top-k (1–200)", initial.topK.toString(), InputType.TYPE_CLASS_NUMBER)
+        val repeat = addField("Repetition penalty (1.0–2.0)", initial.repeatPenalty.toString(), decimal)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Manual Tune")
+            .setMessage("Atur cara model memilih token. Nilai ini berlaku untuk model yang sedang dimuat.")
+            .setView(panel)
+            .setPositiveButton("Terapkan", null)
+            .setNegativeButton("Batal", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                try {
+                    val tempValue = temperature.text.toString().toFloat()
+                    val topPValue = topP.text.toString().toFloat()
+                    val topKValue = topK.text.toString().toInt()
+                    val repeatValue = repeat.text.toString().toFloat()
+                    require(tempValue in 0.05f..2.0f) { "Temperature harus 0.05–2.0." }
+                    require(topPValue in 0.10f..1.0f) { "Top-p harus 0.10–1.0." }
+                    require(topKValue in 1..200) { "Top-k harus 1–200." }
+                    require(repeatValue in 1.0f..2.0f) { "Repetition penalty harus 1.0–2.0." }
+                    val tune = SamplingTune("manual", "Manual", tempValue, topPValue, topKValue, repeatValue)
+                    manualTune = tune
+                    applySamplingTune(tune, "manual")
+                    dialog.dismiss()
+                } catch (e: Exception) {
+                    toast(e.message ?: "Nilai tune tidak valid.")
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun activeSamplingTune(): SamplingTune =
+        if (activeTuneId == "manual") manualTune
+        else samplingPresets.firstOrNull { it.id == activeTuneId } ?: samplingPresets.last()
+
+    private fun activeTuneLabel(): String = activeSamplingTune().label
+
+    private fun applySamplingTune(tune: SamplingTune, selectedId: String) {
+        activeTuneId = selectedId
+        if (selectedId == "manual") manualTune = tune.copy(id = "manual", label = "Manual")
+        val editor = prefs().edit()
+            .putString(KEY_ACTIVE_TUNE, activeTuneId)
+            .putFloat(KEY_MANUAL_TEMPERATURE, manualTune.temperature)
+            .putFloat(KEY_MANUAL_TOP_P, manualTune.topP)
+            .putInt(KEY_MANUAL_TOP_K, manualTune.topK)
+            .putFloat(KEY_MANUAL_REPEAT_PENALTY, manualTune.repeatPenalty)
+        editor.apply()
+        if (::engine.isInitialized && engineReady && engine.state.value is InferenceEngine.State.ModelReady) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    val active = activeSamplingTune()
+                    engine.setSamplingParams(active.temperature, active.topP, active.topK, active.repeatPenalty)
+                    withContext(Dispatchers.Main) {
+                        status.text = "Tune aktif: ${active.label}"
+                        toast("${active.label} diterapkan.")
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) { toast("Tune tersimpan, tetapi gagal diterapkan: ${e.message}") }
+                }
+            }
+        } else {
+            toast("${tune.label} disimpan; akan diterapkan saat model dimuat.")
+        }
     }
 
     private fun showModelSettings() {
@@ -1347,6 +1468,8 @@ class MainActivity : AppCompatActivity() {
                 }
                 engine.loadModel(file.absolutePath)
                 engine.setSystemPrompt(systemPromptOverride ?: buildCharacterSystemPrompt(activeBot(), historyOverride ?: messages.toList()))
+                val tune = activeSamplingTune()
+                engine.setSamplingParams(tune.temperature, tune.topP, tune.topK, tune.repeatPenalty)
                 withContext(Dispatchers.Main) {
                     activeModelName = file.name
                     prefs().edit().putString(KEY_ACTIVE_MODEL, file.name).apply()
@@ -2080,6 +2203,14 @@ class MainActivity : AppCompatActivity() {
     private fun loadLocalState() {
         themeIndex = prefs().getInt(KEY_THEME, 0).coerceIn(0, palettes.lastIndex)
         activeModelName = prefs().getString(KEY_ACTIVE_MODEL, null)
+        activeTuneId = prefs().getString(KEY_ACTIVE_TUNE, "default") ?: "default"
+        manualTune = SamplingTune(
+            "manual", "Manual",
+            prefs().getFloat(KEY_MANUAL_TEMPERATURE, 0.7f),
+            prefs().getFloat(KEY_MANUAL_TOP_P, 0.9f),
+            prefs().getInt(KEY_MANUAL_TOP_K, 40),
+            prefs().getFloat(KEY_MANUAL_REPEAT_PENALTY, 1.1f)
+        )
         activeBotId = prefs().getString(KEY_ACTIVE_BOT, "default") ?: "default"
         profilePath = prefs().getString(KEY_PROFILE, null)
         userName = prefs().getString(KEY_USER_NAME, "You") ?: "You"
@@ -2326,6 +2457,14 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    private data class SamplingTune(
+        val id: String,
+        val label: String,
+        val temperature: Float,
+        val topP: Float,
+        val topK: Int,
+        val repeatPenalty: Float
+    )
     private data class ChatMessage(val role: String, var text: String)
     private data class BlackjackChatMessage(val fromUser: Boolean, val text: String)
     private data class BlackjackCard(val rank: Int, val suit: String) {
@@ -2344,6 +2483,11 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val KEY_ACTIVE_MODEL = "active_model"
+        private const val KEY_ACTIVE_TUNE = "active_model_tune"
+        private const val KEY_MANUAL_TEMPERATURE = "manual_tune_temperature"
+        private const val KEY_MANUAL_TOP_P = "manual_tune_top_p"
+        private const val KEY_MANUAL_TOP_K = "manual_tune_top_k"
+        private const val KEY_MANUAL_REPEAT_PENALTY = "manual_tune_repeat_penalty"
         private const val KEY_AUTO_LOAD_MODEL = "auto_load_model"
         private const val KEY_ACTIVE_BOT = "active_bot"
         private const val KEY_THEME = "theme"
