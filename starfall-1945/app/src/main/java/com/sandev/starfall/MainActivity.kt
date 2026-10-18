@@ -315,6 +315,7 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
     private var gemmaAutoSkillCooldown = 5f
     private var commentTime = 0f; private var comment = ""; private var gemmaAction = "ATTACK"; private var decisionTimer = .35f; private var gemmaThinking = false; private var bossFireTimer = 1.1f
     private var secondsWithoutValidDecision = 0f; private var systemTakeover = false; private var autoPilotTimer = 0f
+    private var gemmaRequestToken = 0; private var gemmaRequestElapsed = 0f
     private val battleHistory = mutableListOf<String>()
     private var defeated = 0; private var hp = 100 + hullLevel * 20 + if (shipClass == "GUARDIAN") 40 else 0; private val maxHp = 100 + hullLevel * 20 + if (shipClass == "GUARDIAN") 40 else 0; private var done = false
     private var bossSpawned = false; private var bossCleared = false
@@ -417,6 +418,16 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
             bombCooldown = 5f
         }
         secondsWithoutValidDecision += dt
+        if (gemmaThinking) {
+            gemmaRequestElapsed += dt
+            if (gemmaRequestElapsed >= 10f) {
+                gemmaRequestToken++ // Ignore late results from a timed-out decision.
+                gemmaThinking = false
+                gemmaRequestElapsed = 0f
+                decisionTimer = 1.8f
+                battleHistory.add("Gemma decision timed out; retry queued.")
+            }
+        }
         if (!systemTakeover && secondsWithoutValidDecision >= 8f) {
             systemTakeover = true; autoPilotTimer = 0f
             comment = "SYSTEM OVERRIDE: Gemma nge-lag. Biar aku yang urus dulu!"; commentTime = 4.5f
@@ -436,7 +447,9 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
             battleHistory.add("Gemma auto Cover Fire.")
         }
         if (decisionTimer <= 0f && !gemmaThinking) {
-            gemmaThinking = true; decisionTimer = 4.2f
+            gemmaRequestToken++
+            val requestToken = gemmaRequestToken
+            gemmaThinking = true; gemmaRequestElapsed = 0f; decisionTimer = 4.2f
             val nearest = targetEnemy?.let { if (it.boss) "DREADNOUGHT boss HP " + it.hp else "enemy HP " + it.hp + ", x=" + it.x.toInt() + ", y=" + it.y.toInt() } ?: "tidak ada target dekat"
             val unlocked = buildList {
                 if (pilotLevel >= 1 || stageNumber >= 1) add("COVER_FIRE")
@@ -446,28 +459,35 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
             }.joinToString(",")
             val state = "Stage=" + stageNumber + "; pilot level=" + pilotLevel + "; hull=" + hp + "/" + maxHp + "; kills=" + defeated + "/" + target + "; action=" + gemmaAction + "; danger=" + (danger != null) + "; target=" + nearest + "; boss=" + (bossSpawned && !bossCleared) + "; Gemma skills unlocked=" + unlocked + "; skill cooldown=" + String.format(java.util.Locale.US, "%.1f", gemmaSkillCooldown) + ". Pilih keputusan valid dan SAY pendek."
             askGemma(state) { raw ->
-                gemmaThinking = false
-                decisionTimer = 4.2f
-                val action = Regex("(?i)ACTION\\s*[:=\\-]?\\s*(ATTACK|DODGE|COVER|BOSS|TARGET_LOCK|COVER_FIRE|EVADE|COORDINATED|SKILL)").find(raw)?.groupValues?.get(1)?.uppercase()
-                if (action != null) {
-                    secondsWithoutValidDecision = 0f
-                    if (systemTakeover) {
-                        systemTakeover = false
-                        comment = "Gemma is back! 😎🚀"; commentTime = 4.5f
-                        battleHistory.add("Gemma kembali mengambil kendali AI.")
-                    } else {
-                        val say = Regex("(?im)^\\s*SAY\\s*:\\s*(.+)$").find(raw)?.groupValues?.get(1)?.trim()
-                        if (say != null && say.isNotBlank()) { comment = say.take(58); commentTime = 4.5f; battleHistory.add("Gemma: " + comment); if (battleHistory.size > 12) battleHistory.removeAt(0) }
+                if (requestToken == gemmaRequestToken) {
+                    gemmaThinking = false
+                    gemmaRequestElapsed = 0f
+                    decisionTimer = if (raw.isBlank()) 1.8f else 2.4f
+                    val strictAction = Regex("(?i)ACTION\\s*[:=\\-]?\\s*(ATTACK|DODGE|COVER|BOSS|TARGET_LOCK|COVER_FIRE|EVADE|COORDINATED|SKILL)\\b").find(raw)?.groupValues?.get(1)?.uppercase()
+                    val bareAction = raw.lineSequence().map { it.trim().uppercase().trimEnd('.', ',', ':', ';', '*') }.firstOrNull { it in setOf("ATTACK", "DODGE", "COVER", "BOSS", "TARGET_LOCK", "COVER_FIRE", "EVADE", "COORDINATED", "SKILL") }
+                    val action = strictAction ?: bareAction
+                    if (action != null) {
+                        secondsWithoutValidDecision = 0f
+                        if (systemTakeover) {
+                            systemTakeover = false
+                            comment = "Gemma is back! 😎🚀"; commentTime = 4.5f
+                            battleHistory.add("Gemma kembali mengambil kendali AI.")
+                        } else {
+                            val say = Regex("(?im)^\\s*SAY\\s*:\\s*(.+)$").find(raw)?.groupValues?.get(1)?.trim()
+                            if (say != null && say.isNotBlank()) { comment = say.take(58); commentTime = 4.5f; battleHistory.add("Gemma: " + comment); if (battleHistory.size > 12) battleHistory.removeAt(0) }
+                        }
+                        when (action) {
+                            "TARGET_LOCK" -> if (isGemmaSkillUnlocked(1)) activateGemmaSkill("TARGET_LOCK") else gemmaAction = "ATTACK"
+                            "COVER_FIRE" -> if (isGemmaSkillUnlocked(0)) activateGemmaSkill("COVER_FIRE") else gemmaAction = "ATTACK"
+                            "EVADE" -> if (isGemmaSkillUnlocked(2)) activateGemmaSkill("EVADE") else gemmaAction = "ATTACK"
+                            "COORDINATED", "SKILL" -> if (isGemmaSkillUnlocked(3) && gemmaSkillCooldown <= 0f) activateGemmaSkill("COORDINATED") else if (isGemmaSkillUnlocked(0) && gemmaSkillCooldown <= 0f) activateGemmaSkill("COVER_FIRE") else gemmaAction = "ATTACK"
+                            else -> gemmaAction = action
+                        }
+                    } else if (raw.isNotBlank()) {
+                        battleHistory.add("Gemma returned an unrecognized action; retry queued.")
                     }
-                    when (action) {
-                        "TARGET_LOCK" -> if (isGemmaSkillUnlocked(1)) activateGemmaSkill("TARGET_LOCK") else gemmaAction = "ATTACK"
-                        "COVER_FIRE" -> if (isGemmaSkillUnlocked(0)) activateGemmaSkill("COVER_FIRE") else gemmaAction = "ATTACK"
-                        "EVADE" -> if (isGemmaSkillUnlocked(2)) activateGemmaSkill("EVADE") else gemmaAction = "ATTACK"
-                        "COORDINATED", "SKILL" -> if (isGemmaSkillUnlocked(3) && gemmaSkillCooldown <= 0f) activateGemmaSkill("COORDINATED") else if (isGemmaSkillUnlocked(0) && gemmaSkillCooldown <= 0f) activateGemmaSkill("COVER_FIRE") else gemmaAction = "ATTACK"
-                        else -> gemmaAction = action
-                    }
+                    postInvalidateOnAnimation()
                 }
-                postInvalidateOnAnimation()
             }
         }
         if (systemTakeover) {
