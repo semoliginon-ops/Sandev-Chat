@@ -24,11 +24,15 @@ if grep -q 'DEFAULT_CONTEXT_SIZE    = 8192' "$ENGINE_CPP"; then
   (cd "$DEST" && git apply "$ROOT/patches/lightweight-engine.patch")
 fi
 
+# Add model-specific sampling controls after the pinned low-memory patch.
+python3 "$ROOT/scripts/patch-sampler.py"
+
 if ! grep -q 'DEFAULT_CONTEXT_SIZE    = 2048' "$ENGINE_CPP" ||
    ! grep -q 'BATCH_SIZE              = 128' "$ENGINE_CPP" ||
+   ! grep -q 'Java_com_arm_aichat_internal_InferenceEngineImpl_setSamplingParamsNative' "$ENGINE_CPP" ||
    ! grep -q 'abiFilters += listOf("arm64-v8a")' "$LIB_GRADLE"; then
-  echo "Could not verify lightweight engine patch; refusing to continue." >&2
+  echo "Could not verify lightweight engine and sampling patches; refusing to continue." >&2
   exit 1
 fi
 
-printf 'Prepared llama.cpp at %s (arm64 only, 2048 context / 128 batch)\n' "$PIN"
+printf 'Prepared llama.cpp at %s (arm64 only, 2048 context / 128 batch, runtime sampler controls)\n' "$PIN"
