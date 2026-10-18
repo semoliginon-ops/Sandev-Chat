@@ -959,64 +959,122 @@ class MainActivity : AppCompatActivity() {
     private fun runBlackjackBotTurn() {
         if (!blackjackBotInvited || !blackjackRoundActive || blackjackBotBusy) return
         if (!engineReady || activeModelName == null) { blackjackMessage = "Model AI tidak siap."; renderPage(); return }
-        blackjackPlayerTurn = false; blackjackBotBusy = true
-        blackjackMessage = "Naya sedang mempertimbangkan langkahnya…"; renderPage()
+        blackjackPlayerTurn = false
+        blackjackBotBusy = true
+        blackjackMessage = "Naya sedang mempertimbangkan langkahnya…"
+        renderPage()
         blackjackAiJob = lifecycleScope.launch(Dispatchers.IO) {
             try {
                 var decisions = 0
                 var finished = false
                 while (!finished && decisions++ < 12) {
                     val prompt = withContext(Dispatchers.Main) { buildBlackjackDecisionPrompt() }
-                    var raw = StringBuilder()
-                    engine.sendUserPrompt(prompt, predictLength = 96).collect { raw.append(it) }
-                    var output = raw.toString()
+                    var output = ""
+                    var timedOut = false
+
+                    // Some small GGUF models can finish with no usable text, or stall during
+                    // generation. Bound each request so the Blackjack turn cannot stay busy forever.
+                    try {
+                        val raw = StringBuilder()
+                        withTimeout(45_000L) {
+                            engine.sendUserPrompt(prompt, predictLength = 96).collect { raw.append(it) }
+                        }
+                        output = raw.toString()
+                    } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+                        timedOut = true
+                    }
+
                     var action = Regex("(?im)^\\s*ACTION\\s*:\\s*(HIT|STAND)\\b").find(output)?.groupValues?.get(1)?.uppercase()
                     var comment = Regex("(?im)^\\s*COMMENT\\s*:\\s*(.+)$").find(output)?.groupValues?.get(1)?.trim().orEmpty()
-                    if (action == null) {
-                        raw = StringBuilder()
-                        engine.sendUserPrompt("Format sebelumnya tidak valid. Kamu adalah Naya, pilih langkah legal sekarang. Jawab hanya dua baris: ACTION: HIT atau ACTION: STAND; COMMENT: satu kalimat pendek yang ceria.", predictLength = 64).collect { raw.append(it) }
-                        output = raw.toString()
-                        action = Regex("(?im)^\\s*ACTION\\s*:\\s*(HIT|STAND)\\b").find(output)?.groupValues?.get(1)?.uppercase()
-                        comment = Regex("(?im)^\\s*COMMENT\\s*:\\s*(.+)$").find(output)?.groupValues?.get(1)?.trim().orEmpty()
-                    }
-                    if (action == null) {
-                        withContext(Dispatchers.Main) {
-                            blackjackMessage = "Naya belum menghasilkan aksi valid. Coba keputusan AI lagi."
-                            showBlackjackBubble("Aduh, aku nge-lag sebentar 😅 Coba keputusan AI lagi, ya!")
-                            renderPage()
+
+                    // Retry malformed/empty output once. Don't start a second inference after a timeout,
+                    // because the native inference engine may still be unwinding the cancelled request.
+                    if (action == null && !timedOut) {
+                        try {
+                            val retry = StringBuilder()
+                            withTimeout(30_000L) {
+                                engine.sendUserPrompt(
+                                    "Pilih satu aksi Blackjack sekarang berdasarkan keadaan game yang diberikan sebelumnya. " +
+                                        "Jawab tepat dua baris dan jangan beri penjelasan tambahan:\n" +
+                                        "ACTION: HIT atau ACTION: STAND\nCOMMENT: satu komentar pendek dalam bahasa Indonesia.",
+                                    predictLength = 48
+                                ).collect { retry.append(it) }
+                            }
+                            output = retry.toString()
+                            action = Regex("(?im)^\\s*ACTION\\s*:\\s*(HIT|STAND)\\b").find(output)?.groupValues?.get(1)?.uppercase()
+                            comment = Regex("(?im)^\\s*COMMENT\\s*:\\s*(.+)$").find(output)?.groupValues?.get(1)?.trim().orEmpty()
+                        } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+                            timedOut = true
                         }
-                        return@launch
                     }
+
+                    // Last-resort game rule only: keep Gemma's own action/comment whenever valid,
+                    // but never let an empty or malformed model response freeze the round.
+                    if (action == null) {
+                        val total = withContext(Dispatchers.Main) { handValue(blackjackDealerHand) }
+                        action = if (total < 17) "HIT" else "STAND"
+                        comment = when {
+                            timedOut -> if (action == "HIT") "Aduh, aku sempat nge-lag! Ambil kartu dulu, ya 😅" else "Hmm, aku berhenti di sini dulu. Jangan senang dulu! 😏"
+                            action == "HIT" -> "Aku masih berani ambil satu kartu lagi! 😜"
+                            else -> "Aku cukup puas dengan kartuku. Sekarang kita lihat hasilnya! 😏"
+                        }
+                        withContext(Dispatchers.Main) {
+                            blackjackMessage = if (timedOut) {
+                                "Respons Gemma terlalu lama; Naya memakai langkah cadangan agar ronde tetap berjalan."
+                            } else {
+                                "Respons Gemma tidak terbaca; Naya memakai langkah cadangan agar ronde tetap berjalan."
+                            }
+                        }
+                    }
+
                     val result = withContext(Dispatchers.Main) {
-                        if (comment.isNotBlank()) showBlackjackBubble(comment)
+                        if (comment.isNotBlank()) showBlackjackBubble(comment.take(220))
                         if (action == "HIT" && handValue(blackjackDealerHand) < 21) {
-                            val card = drawBlackjackCard(); blackjackDealerHand.add(card)
+                            val card = drawBlackjackCard()
+                            blackjackDealerHand.add(card)
                             val score = handValue(blackjackDealerHand)
                             if (score > 21) {
                                 finishBlackjackRound("Naya bust di " + score + ". Kamu menang!")
                                 showBlackjackBubble(if (comment.isBlank()) "Aduhhh, bust! Kamu menang! 😭😂" else comment + "\nAduhhh, aku bust! Kamu menang! 😭😂")
-                                renderPage(); "DONE"
+                                renderPage()
+                                "DONE"
                             } else if (score == 21) {
-                                settleBlackjackRound(); renderPage(); "DONE"
+                                settleBlackjackRound()
+                                renderPage()
+                                "DONE"
                             } else {
                                 blackjackMessage = "Naya mengambil satu kartu dan berpikir lagi…"
-                                renderPage(); "CONTINUE"
+                                renderPage()
+                                "CONTINUE"
                             }
                         } else {
                             settleBlackjackRound()
-                            renderPage(); "DONE"
+                            renderPage()
+                            "DONE"
                         }
                     }
                     if (result == "DONE") finished = true
                 }
-                if (!finished) withContext(Dispatchers.Main) { blackjackMessage = "Batas giliran AI tercapai; coba keputusan Naya lagi."; renderPage() }
+                if (!finished) withContext(Dispatchers.Main) {
+                    blackjackMessage = "Batas keputusan Naya tercapai; ronde diselesaikan dengan aman."
+                    settleBlackjackRound()
+                    renderPage()
+                }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     blackjackMessage = "AI mengalami kendala: " + (e.message ?: e.javaClass.simpleName)
-                    showBlackjackBubble("Ups, ada gangguan sebentar. Coba lagi, ya! 😅")
+                    showBlackjackBubble("Ups, aku sempat tersendat. Kita tetap lanjut, ya! 😅")
+                    // If inference fails, restore a usable turn state instead of leaving the player
+                    // locked out. The user can tap Stand or Draw again.
+                    blackjackPlayerTurn = true
                     renderPage()
                 }
-            } finally { withContext(Dispatchers.Main) { blackjackBotBusy = false; renderPage() } }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    blackjackBotBusy = false
+                    renderPage()
+                }
+            }
         }
     }
 
