@@ -8,6 +8,9 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
 import android.view.Gravity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
@@ -41,7 +44,7 @@ class GemmaWingmanActivity : ComponentActivity() {
     private var hull = 0
     private var nextExp = 100
     private lateinit var status: TextView
-    private lateinit var transcript: TextView
+    private lateinit var transcript: LinearLayout
     private lateinit var input: EditText
     private lateinit var send: Button
     private lateinit var chooseModel: Button
@@ -53,6 +56,7 @@ class GemmaWingmanActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.rgb(5, 10, 26)
         window.navigationBarColor = Color.rgb(5, 10, 26)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
@@ -119,12 +123,11 @@ class GemmaWingmanActivity : ComponentActivity() {
                 bottomMargin = dp(8)
             }
         }
-        transcript = TextView(this).apply {
-            textSize = 15f
-            setTextColor(Color.rgb(230, 238, 250))
-            setPadding(dp(12), dp(12), dp(12), dp(12))
+        transcript = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(12), dp(10), dp(12))
         }
-        scroll.addView(transcript)
+        scroll.addView(transcript, ScrollView.LayoutParams(-1, -2))
         root.addView(scroll)
         input = EditText(this).apply {
             hint = "Ngobrol dengan Gemma..."
@@ -139,6 +142,13 @@ class GemmaWingmanActivity : ComponentActivity() {
         root.addView(send, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(5) })
         root.addView(button("KEMBALI KE COMMAND") { finish() }, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(4) })
         setContentView(root)
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            view.setPadding(dp(14), bars.top + dp(8), dp(14), maxOf(bars.bottom, ime.bottom) + dp(8))
+            insets
+        }
+        ViewCompat.requestApplyInsets(root)
     }
 
     private fun button(label: String, action: () -> Unit) = Button(this).apply {
@@ -268,9 +278,30 @@ class GemmaWingmanActivity : ComponentActivity() {
     }
 
     private fun renderHistory() {
-        transcript.text = if (history.isBlank()) {
-            "Gemma: Hai, $pilot! Aku wingman-mu. Impor model GGUF lalu kita bisa ngobrol tentang misi dan progres game."
-        } else history.trim()
+        transcript.removeAllViews()
+        val lines = if (history.isBlank()) listOf("Gemma: Hai, " + pilot + "! Aku wingman-mu. Impor model GGUF lalu kita bisa ngobrol tentang misi dan progres game.")
+            else history.trim().lines().filter { it.isNotBlank() }
+        lines.forEach { line ->
+            val fromPilot = line.startsWith("Pilot:")
+            val body = line.substringAfter(":").trim()
+            val bubble = TextView(this).apply {
+                text = body; textSize = 15f; setTextColor(Color.rgb(238, 244, 255))
+                setPadding(dp(12), dp(9), dp(12), dp(9))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                    cornerRadius = dp(16).toFloat()
+                    setColor(if (fromPilot) Color.rgb(35, 83, 126) else Color.rgb(35, 43, 69))
+                    setStroke(dp(1), if (fromPilot) Color.rgb(65, 160, 225) else Color.rgb(105, 91, 160))
+                }
+            }
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = if (fromPilot) Gravity.END else Gravity.START
+                setPadding(0, dp(3), 0, dp(3))
+                addView(bubble, LinearLayout.LayoutParams((resources.displayMetrics.widthPixels * .76f).toInt(), -2))
+            }
+            transcript.addView(row, LinearLayout.LayoutParams(-1, -2))
+        }
         scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
     }
 
