@@ -7,6 +7,9 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.app.AlertDialog
+import android.widget.EditText
+import android.text.InputType
 import android.view.MotionEvent
 import android.view.View
 import android.view.Window
@@ -57,6 +60,14 @@ private class ForestGameView(context: Context) : View(context) {
     private var message = "Hutan Sunyi: berburu untuk EXP dan gold"
     private var messageTime = 5f; private var clock = 0f
     private var bossSpawned = false; private var bossCleared = false
+    private var screen = "MAIN"
+    private var playerName = prefs.getString("player_name", "").orEmpty()
+    private var hero = prefs.getString("hero", "Vanguard").orEmpty()
+    private var potions = prefs.getInt("potions", 2).coerceAtLeast(0)
+    private var materials = prefs.getInt("materials", 0).coerceAtLeast(0)
+    private var weaponLevel = prefs.getInt("weapon_level", 0).coerceIn(0, 5)
+    private var armorLevel = prefs.getInt("armor_level", 0).coerceIn(0, 5)
+    private var skillLevel = prefs.getInt("skill_level", 1).coerceIn(1, 5)
 
     init { repeat(4) { spawn(if (it == 2) 1 else 0) } }
 
@@ -70,7 +81,7 @@ private class ForestGameView(context: Context) : View(context) {
     }
     private fun say(s: String, t: Float = 2f) { message = s; messageTime = t }
     private fun save() {
-        prefs.edit().putInt("level", level).putInt("exp", exp).putInt("gold", gold).putInt("kills", kills).apply()
+        prefs.edit().putInt("level", level).putInt("exp", exp).putInt("gold", gold).putInt("kills", kills).putString("player_name", playerName).putString("hero", hero).putInt("potions", potions).putInt("materials", materials).putInt("weapon_level", weaponLevel).putInt("armor_level", armorLevel).putInt("skill_level", skillLevel).apply()
     }
     private fun blocked(ax: Float, ay: Float) =
         ax < 26f || ax > 934f || ay < 76f || ay > 450f || trees.any { it.contains(ax, ay) }
@@ -172,9 +183,9 @@ private class ForestGameView(context: Context) : View(context) {
         if (m.kind == 1) { exp += 22; gold += random.nextInt(6, 11) }
         else { exp += 12; gold += random.nextInt(3, 7) }
         val roll = random.nextInt(100)
-        val drop = if (m.kind == 1 && roll < 60) "material umum"
-            else if (m.kind == 0 && roll < 30) "material umum"
-            else if (roll < 38) "ramuan HP" else ""
+        val drop = if (m.kind == 1 && roll < 60) { materials++; "material umum" }
+            else if (m.kind == 0 && roll < 30) { materials++; "material umum" }
+            else if (roll < 38) { potions++; "ramuan HP" } else ""
         say(if (drop.isEmpty()) "Monster tumbang! EXP dan gold didapat." else "Drop: $drop", 2f)
         levelUp(); save()
     }
@@ -196,7 +207,7 @@ private class ForestGameView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         canvas.save(); canvas.scale(width / 960f, height / 540f)
-        update(0.016f); drawForest(canvas); drawCharacters(canvas); drawHud(canvas)
+        if (screen == "GAME") { update(0.016f); drawForest(canvas); drawCharacters(canvas); drawHud(canvas) } else drawMenu(canvas)
         canvas.restore(); postInvalidateDelayed(16L)
     }
     private fun drawForest(c: Canvas) {
@@ -252,9 +263,10 @@ private class ForestGameView(context: Context) : View(context) {
         }
     }
     private fun drawHud(c: Canvas) {
-        paint.color=Color.argb(225,14,25,27);c.drawRoundRect(RectF(12f,10f,365f,91f),8f,8f,paint)
-        text(c,"STARFALL RPG",24f,32f,16f,Color.rgb(236,220,165))
-        text(c,"LV $level  EXP $exp/${need(level)}  GOLD $gold",24f,51f,12f)
+        paint.color=Color.argb(225,14,25,27);c.drawRoundRect(RectF(12f,10f,410f,103f),8f,8f,paint)
+        text(c,"STARFALL RPG",24f,31f,16f,Color.rgb(236,220,165))
+        text(c,playerName.ifBlank { "Adventurer" }+" · "+hero,24f,49f,11f,Color.rgb(195,220,211))
+        text(c,"LV "+level+"  EXP "+exp+"/"+need(level)+"  GOLD "+gold,24f,67f,12f)
         text(c,"PLAYER",24f,68f,10f);bar(c,78f,59f,145f,11f,hp,maxHp,Color.rgb(209,73,74))
         text(c,"GEMMA",24f,84f,10f);bar(c,78f,75f,145f,10f,gemmaHp,gemmaMaxHp,Color.rgb(179,94,211))
         text(c,"KILLS $kills",244f,69f,11f,Color.rgb(218,225,196))
@@ -269,8 +281,141 @@ private class ForestGameView(context: Context) : View(context) {
         paint.color=Color.argb(225,135,69,68);c.drawCircle(780f,449f,35f,paint);text(c,"DODGE",752f,454f,10f)
         paint.color=Color.argb(225,103,69,159);c.drawCircle(872f,449f,35f,paint);text(c,"SKILL",852f,454f,11f)
         if(skillCooldown>0f) text(c,"${skillCooldown.toInt()+1}s",861f,422f,10f,Color.YELLOW)
+        paint.color=Color.argb(225,18,30,34); c.drawRoundRect(RectF(884f,55f,948f,85f),6f,6f,paint); text(c,"MENU",895f,75f,11f,Color.rgb(255,230,172))
     }
+
+    private fun menuButton(c: Canvas, label: String, bx: Float, by: Float, bw: Float, bh: Float, active: Boolean = false) {
+        paint.color=if(active) Color.rgb(89,83,132) else Color.rgb(38,65,56)
+        c.drawRoundRect(RectF(bx,by,bx+bw,by+bh),7f,7f,paint)
+        paint.color=Color.rgb(223,207,161); paint.style=Paint.Style.STROKE
+        c.drawRoundRect(RectF(bx,by,bx+bw,by+bh),7f,7f,paint); paint.style=Paint.Style.FILL
+        text(c,label,bx+12f,by+bh*0.62f,if(label.length>24) 11f else 14f,Color.WHITE)
+    }
+    private fun drawMenu(c: Canvas) {
+        c.drawColor(Color.rgb(17,34,30))
+        for(i in 0..59){paint.color=if(i%2==0) Color.rgb(22,43,36) else Color.rgb(19,38,33);c.drawRect(i*16f,0f,i*16f+16f,540f,paint)}
+        paint.color=Color.argb(238,9,20,22);c.drawRoundRect(RectF(24f,18f,936f,522f),12f,12f,paint)
+        text(c,"STARFALL RPG",52f,61f,24f,Color.rgb(236,220,165))
+        text(c,screen,52f,92f,16f,Color.rgb(201,218,203))
+        text(c,playerName.ifBlank{"Nama belum dibuat"}+" · "+hero+" · LV "+level+" · GOLD "+gold,520f,59f,12f,Color.rgb(244,218,143))
+        when(screen){
+            "MAIN" -> {
+                text(c,"Bangun hero, kumpulkan perlengkapan, dan taklukkan hutan.",52f,133f,13f)
+                menuButton(c,"MULAI PETUALANGAN",52f,158f,360f,49f,playerName.isNotBlank())
+                menuButton(c,"CREATE PLAYER / PILIH HERO",52f,218f,360f,45f)
+                menuButton(c,"CHARACTER",52f,274f,170f,43f);menuButton(c,"INVENTORY",242f,274f,170f,43f)
+                menuButton(c,"SKILLS",52f,328f,170f,43f);menuButton(c,"EQUIPMENT",242f,328f,170f,43f)
+                menuButton(c,"QUEST & MAP",52f,382f,170f,43f);menuButton(c,"SETTINGS",242f,382f,170f,43f)
+                text(c,"Offline · Save lokal · Prototype",520f,205f,15f,Color.rgb(166,206,170))
+                text(c,"Vanguard: HP tinggi | Ranger: damage tinggi",520f,235f,12f)
+                text(c,"Mage: lebih rapuh, skill area lebih kuat",520f,260f,12f)
+            }
+            "CREATE" -> {
+                text(c,"Buat nama pemain lalu pilih kelas hero.",52f,133f,13f)
+                menuButton(c,if(playerName.isBlank())"ISI NAMA PEMAIN" else "NAMA: "+playerName,52f,158f,360f,46f)
+                menuButton(c,"VANGUARD · HP TINGGI",500f,151f,365f,46f,hero=="Vanguard")
+                menuButton(c,"RANGER · DAMAGE TINGGI",500f,209f,365f,46f,hero=="Ranger")
+                menuButton(c,"MAGE · ARC SLASH KUAT",500f,267f,365f,46f,hero=="Mage")
+                text(c,if(hero=="Vanguard")"HP 140 · damage dasar" else if(hero=="Ranger")"HP 110 · damage lebih tinggi" else "HP 90 · skill area lebih kuat",500f,337f,12f,Color.rgb(225,212,171))
+                menuButton(c,"SIMPAN KARAKTER",52f,225f,360f,46f);menuButton(c,"KEMBALI",52f,285f,170f,43f)
+            }
+            "CHARACTER" -> {
+                text(c,"Nama: "+playerName.ifBlank{"Belum dibuat"},52f,145f,15f)
+                text(c,"Hero: "+hero+"    Level: "+level+"    EXP: "+exp+" / "+need(level),52f,180f,14f)
+                text(c,"HP: "+hp.toInt()+" / "+maxHp.toInt()+"    Damage: "+(damage.toInt()+weaponLevel*5),52f,215f,14f)
+                text(c,"Armor upgrade: "+armorLevel+"    Weapon upgrade: "+weaponLevel,52f,250f,14f)
+                text(c,"Monster dikalahkan: "+kills,52f,285f,14f)
+                menuButton(c,"GANTI HERO",52f,330f,220f,44f);menuButton(c,"KEMBALI",52f,390f,220f,43f)
+            }
+            "INVENTORY" -> {
+                text(c,"Ramuan HP × "+potions+" · memulihkan 45 HP",52f,154f,15f,Color.rgb(222,145,145))
+                text(c,"Material umum × "+materials,52f,192f,15f,Color.rgb(190,214,167));text(c,"Gold: "+gold,52f,230f,15f,Color.rgb(244,218,143))
+                menuButton(c,"GUNAKAN RAMUAN",52f,260f,260f,46f,potions>0&&hp<maxHp);menuButton(c,"KEMBALI",52f,330f,200f,43f)
+            }
+            "SKILLS" -> {
+                text(c,"ARC SLASH · Level "+skillLevel+" / 5",52f,154f,16f,Color.rgb(211,176,244))
+                text(c,"Damage area "+(42+(skillLevel-1)*18+weaponLevel*5)+" · cooldown 6 detik",52f,184f,13f)
+                menuButton(c,"UPGRADE ARC SLASH · "+(skillLevel*45)+" GOLD",52f,205f,350f,46f,skillLevel<5&&gold>=skillLevel*45)
+                text(c,"Skill upgrade menambah damage.",52f,285f,12f);menuButton(c,"KEMBALI",52f,355f,200f,43f)
+            }
+            "EQUIPMENT" -> {
+                text(c,"Senjata: +"+(weaponLevel*5)+" damage",52f,154f,15f)
+                menuButton(c,"UPGRADE SENJATA · "+((weaponLevel+1)*55)+" GOLD",52f,175f,350f,46f,weaponLevel<5&&gold>=(weaponLevel+1)*55)
+                text(c,"Armor: pengurangan damage "+(armorLevel*3),52f,255f,15f)
+                menuButton(c,"UPGRADE ARMOR · "+((armorLevel+1)*50)+" GOLD",52f,276f,350f,46f,armorLevel<5&&gold>=(armorLevel+1)*50)
+                menuButton(c,"KEMBALI",52f,360f,200f,43f)
+            }
+            "QUESTS" -> {
+                text(c,"["+(if(kills>=5)"X" else " ")+"] Pemburu pemula: "+kills+"/5 monster",52f,155f,14f)
+                text(c,"["+(if(kills>=18)"X" else " ")+"] Tantang Guardian: "+kills+"/18 monster",52f,195f,14f)
+                text(c,"["+(if(level>=5)"X" else " ")+"] Tumbuh kuat: capai level 5",52f,235f,14f)
+                text(c,"Map saat ini: Hutan Sunyi",52f,280f,14f,Color.rgb(190,214,167));menuButton(c,"KEMBALI",52f,350f,200f,43f)
+            }
+            "SETTINGS" -> {
+                text(c,"Mode offline. Progres karakter tersimpan lokal.",52f,160f,14f)
+                text(c,"Joystick kiri · Dodge kanan · Skill Arc Slash.",52f,200f,13f);menuButton(c,"KEMBALI KE MENU UTAMA",52f,270f,300f,46f)
+            }
+            "PAUSE" -> {
+                menuButton(c,"LANJUT BERMAIN",52f,150f,300f,46f);menuButton(c,"CHARACTER",52f,210f,300f,43f)
+                menuButton(c,"INVENTORY",52f,265f,300f,43f);menuButton(c,"SKILLS",52f,320f,300f,43f)
+                menuButton(c,"EQUIPMENT",52f,375f,300f,43f);menuButton(c,"MENU UTAMA",500f,375f,300f,43f)
+            }
+        }
+    }
+    private fun showNameDialog() {
+        val field=EditText(context);field.setSingleLine(true);field.inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+        field.setText(playerName);field.hint="Nama karakter"
+        AlertDialog.Builder(context).setTitle("Create Player").setMessage("Masukkan nama hero (maksimal 18 karakter).")
+            .setView(field).setNegativeButton("Batal",null).setPositiveButton("Simpan"){_,_->
+                val v=field.text.toString().trim().take(18)
+                if(v.isNotBlank()){playerName=v;save();screen="CREATE";invalidate()}
+            }.show()
+    }
+    private fun clickMenu(tx:Float,ty:Float) {
+        fun hit(a:Float,b:Float,w:Float,h:Float)=tx in a..(a+w)&&ty in b..(b+h)
+        when(screen){
+            "MAIN" -> when{
+                hit(52f,158f,360f,49f)->if(playerName.isNotBlank()){screen="GAME";say("Selamat datang, "+playerName,3f)}else screen="CREATE"
+                hit(52f,218f,360f,45f)->screen="CREATE"
+                hit(52f,274f,170f,43f)->screen="CHARACTER";hit(242f,274f,170f,43f)->screen="INVENTORY"
+                hit(52f,328f,170f,43f)->screen="SKILLS";hit(242f,328f,170f,43f)->screen="EQUIPMENT"
+                hit(52f,382f,170f,43f)->screen="QUESTS";hit(242f,382f,170f,43f)->screen="SETTINGS"
+            }
+            "CREATE" -> when{
+                hit(52f,158f,360f,46f)->showNameDialog()
+                hit(500f,151f,365f,46f)->{hero="Vanguard";maxHp=140f;damage=14f+(level-1)*2f;hp=min(hp,maxHp);save()}
+                hit(500f,209f,365f,46f)->{hero="Ranger";maxHp=110f;damage=18f+(level-1)*2f;hp=min(hp,maxHp);save()}
+                hit(500f,267f,365f,46f)->{hero="Mage";maxHp=90f;damage=14f+(level-1)*2f;hp=min(hp,maxHp);save()}
+                hit(52f,225f,360f,46f)->if(playerName.isNotBlank()){when(hero){"Vanguard"->{maxHp=140f;damage=14f+(level-1)*2f};"Ranger"->{maxHp=110f;damage=18f+(level-1)*2f};else->{maxHp=90f;damage=14f+(level-1)*2f}};hp=maxHp;save();screen="MAIN"}else showNameDialog()
+                hit(52f,285f,170f,43f)->screen="MAIN"
+            }
+            "CHARACTER" -> when{hit(52f,330f,220f,44f)->screen="CREATE";hit(52f,390f,220f,43f)->screen="MAIN"}
+            "INVENTORY" -> when{
+                hit(52f,260f,260f,46f)->if(potions>0&&hp<maxHp){potions--;hp=min(maxHp,hp+45f);save();say("Ramuan digunakan: +45 HP",2f)}else say(if(potions==0)"Ramuan habis." else "HP masih penuh.")
+                hit(52f,330f,200f,43f)->screen="PAUSE"
+            }
+            "SKILLS" -> when{
+                hit(52f,205f,350f,46f)->{val cost=skillLevel*45;if(skillLevel<5&&gold>=cost){gold-=cost;skillLevel++;save();say("Arc Slash naik ke Lv."+skillLevel)}else say("Gold kurang atau level maksimum.")}
+                hit(52f,355f,200f,43f)->screen="PAUSE"
+            }
+            "EQUIPMENT" -> when{
+                hit(52f,175f,350f,46f)->{val cost=(weaponLevel+1)*55;if(weaponLevel<5&&gold>=cost){gold-=cost;weaponLevel++;save();say("Senjata ditingkatkan.")}else say("Gold kurang atau level maksimum.")}
+                hit(52f,276f,350f,46f)->{val cost=(armorLevel+1)*50;if(armorLevel<5&&gold>=cost){gold-=cost;armorLevel++;save();say("Armor ditingkatkan.")}else say("Gold kurang atau level maksimum.")}
+                hit(52f,360f,200f,43f)->screen="PAUSE"
+            }
+            "QUESTS" -> if(hit(52f,350f,200f,43f))screen="PAUSE"
+            "SETTINGS" -> if(hit(52f,270f,300f,46f))screen="MAIN"
+            "PAUSE" -> when{
+                hit(52f,150f,300f,46f)->screen="GAME";hit(52f,210f,300f,43f)->screen="CHARACTER"
+                hit(52f,265f,300f,43f)->screen="INVENTORY";hit(52f,320f,300f,43f)->screen="SKILLS"
+                hit(52f,375f,300f,43f)->screen="EQUIPMENT";hit(500f,375f,300f,43f)->screen="MAIN"
+            }
+        }
+        save();invalidate()
+    }
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if(e.actionMasked==MotionEvent.ACTION_DOWN){val tx=e.getX()*960f/width;val ty=e.getY()*540f/height;if(screen!="GAME"){clickMenu(tx,ty);return true};if(tx>880f&&ty in 50f..90f){screen="PAUSE";invalidate();return true}}
         when(e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val i=e.actionIndex; val tx=e.getX(i)*960f/width; val ty=e.getY(i)*540f/height
@@ -282,8 +427,9 @@ private class ForestGameView(context: Context) : View(context) {
                     dodgeTime=0.22f;dodgeCooldown=3f;invuln=0.28f;say("Dodge!",0.7f)
                 } else if(tx>825f && ty>390f && skillCooldown<=0f){
                     skillCooldown=6f
-                    mobs.filter{it.alive && dist(it.x,it.y,x,y)<105f}.toList().forEach{it.hp-=42f;if(it.hp<=0f)defeat(it)}
-                    say("ARC SLASH!",1f)
+                    val skillDamage = 42f + (skillLevel-1)*18f + weaponLevel*5f
+                    mobs.filter{it.alive && dist(it.x,it.y,x,y)<105f}.toList().forEach{it.hp-=skillDamage;if(it.hp<=0f)defeat(it)}
+                    say("ARC SLASH Lv."+skillLevel+"!",1f)
                 };return true
             }
             MotionEvent.ACTION_MOVE -> {
