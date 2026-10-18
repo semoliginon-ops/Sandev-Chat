@@ -206,7 +206,7 @@ private class LogoView(context: Context) : View(context) {
 
 private class ShooterView(context: Context, private val weaponLevel: Int, private val hullLevel: Int, private val stageNumber: Int, val onClear: (Boolean, Int, Int, Int) -> Unit) : View(context) {
     private data class Shot(var x: Float, var y: Float, var speed: Float, var damage: Int)
-    private data class Enemy(var x: Float, var y: Float, var hp: Int, var speed: Float)
+    private data class Enemy(var x: Float, var y: Float, var hp: Int, var speed: Float, val boss: Boolean = false)
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val shots = mutableListOf<Shot>(); private val enemies = mutableListOf<Enemy>()
     private val stars = List(85) { floatArrayOf(Random.nextFloat(), Random.nextFloat(), Random.nextFloat() * 2f + 1f) }
@@ -214,8 +214,9 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
     private var last = System.nanoTime(); private var elapsed = 0f
     private var fire = 0f; private var spawn = 0f; private var skill = 0f
     private var commentTime = 3f; private var comment = "Gemma: Aku di sisimu! Ayo maju!"
-    private var defeated = 0; private var hp = 100 + hullLevel * 20; private var done = false
-    private val target = min(60, 24 + stageNumber / 3)
+    private var defeated = 0; private var hp = 100 + hullLevel * 20; private val maxHp = 100 + hullLevel * 20; private var done = false
+    private var bossSpawned = false; private var bossCleared = false
+    private val target = 30
     override fun onDraw(c: Canvas) {
         super.onDraw(c)
         val w = width.toFloat(); val h = height.toFloat()
@@ -227,14 +228,29 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
             p.color = if (i % 5 == 0) Color.CYAN else Color.rgb(110, 145, 190)
             c.drawCircle(s[0] * w, ((s[1] * h + elapsed * (18f + s[2] * 12f)) % h), s[2] * .65f, p)
         }
-        p.color = Color.rgb(20, 44, 76); c.drawRect(0f, 0f, w, 76f, p)
-        p.color = Color.WHITE; p.textSize = 15f; p.typeface = Typeface.DEFAULT_BOLD
-        c.drawText("STAGE $stageNumber • HULL $hp%", 14f, 26f, p); c.drawText("ENEMIES $defeated/$target", 14f, 50f, p)
-        shots.forEach { p.color = Color.CYAN; p.strokeWidth = if (it.damage > 1) 5f else 3f; c.drawLine(it.x, it.y, it.x, it.y + 13f, p) }
+        p.color = Color.rgb(8, 17, 38); c.drawRoundRect(8f, 8f, w - 8f, 66f, 13f, 13f, p)
+        p.color = Color.rgb(40, 69, 105); p.style = Paint.Style.STROKE; p.strokeWidth = 1.2f; c.drawRoundRect(8f, 8f, w - 8f, 66f, 13f, 13f, p); p.style = Paint.Style.FILL
+        p.color = Color.WHITE; p.textSize = 14f; p.typeface = Typeface.DEFAULT_BOLD
+        c.drawText("SECTOR $stageNumber  •  HULL ${hp.coerceAtLeast(0)}/$maxHp", 17f, 28f, p)
+        p.color = Color.rgb(25, 42, 67); c.drawRoundRect(17f, 38f, w - 17f, 45f, 4f, 4f, p)
+        p.color = Color.rgb(83, 230, 255); c.drawRoundRect(17f, 38f, 17f + (w - 34f) * (hp.toFloat() / maxHp).coerceIn(0f, 1f), 45f, 4f, 4f, p)
+        p.color = Color.rgb(182, 205, 232); p.textSize = 11f
+        c.drawText(if (bossSpawned && !bossCleared) "BOSS ENGAGED" else "HOSTILES $defeated/$target", 17f, 59f, p)
+        shots.forEach { p.color = if (it.damage > 1) Color.rgb(255, 205, 105) else Color.CYAN; p.strokeWidth = if (it.damage > 1) 5f else 3f; c.drawLine(it.x, it.y, it.x, it.y + 13f, p) }
         enemies.forEach { e ->
-            p.color = Color.rgb(255, 70, 100)
-            val path = Path().apply { moveTo(e.x, e.y + 20f); lineTo(e.x + 19f, e.y - 13f); lineTo(e.x, e.y - 5f); lineTo(e.x - 19f, e.y - 13f); close() }
-            c.drawPath(path, p)
+            if (e.boss) {
+                p.color = Color.argb(75, 255, 70, 125); c.drawCircle(e.x, e.y, 42f, p)
+                p.color = Color.rgb(255, 67, 111)
+                val path = Path().apply { moveTo(e.x, e.y + 35f); lineTo(e.x + 38f, e.y + 4f); lineTo(e.x + 30f, e.y - 27f); lineTo(e.x + 10f, e.y - 17f); lineTo(e.x, e.y - 38f); lineTo(e.x - 10f, e.y - 17f); lineTo(e.x - 30f, e.y - 27f); lineTo(e.x - 38f, e.y + 4f); close() }; c.drawPath(path, p)
+                p.color = Color.WHITE; c.drawCircle(e.x, e.y, 6f, p)
+                p.color = Color.rgb(45, 16, 38); c.drawRoundRect(w * .18f, 78f, w * .82f, 86f, 5f, 5f, p)
+                p.color = Color.rgb(255, 75, 119); c.drawRoundRect(w * .18f, 78f, w * .18f + (w * .64f) * (e.hp.toFloat() / (220 + stageNumber * 35)).coerceIn(0f, 1f), 86f, 5f, 5f, p)
+                p.color = Color.WHITE; p.textSize = 11f; p.typeface = Typeface.DEFAULT_BOLD; c.drawText("DREADNOUGHT • BOSS", w * .18f, 101f, p)
+            } else {
+                p.color = if (stageNumber % 3 == 0) Color.rgb(255, 155, 92) else Color.rgb(255, 70, 100)
+                val path = Path().apply { moveTo(e.x, e.y + 20f); lineTo(e.x + 19f, e.y - 13f); lineTo(e.x, e.y - 5f); lineTo(e.x - 19f, e.y - 13f); close() }; c.drawPath(path, p)
+                p.color = Color.rgb(255, 190, 205); c.drawCircle(e.x, e.y, 3f, p)
+            }
         }
         ship(c, px, py, Color.rgb(65, 220, 255), 1f); ship(c, wx, wy, Color.rgb(195, 105, 255), .72f)
         if (commentTime > 0) {
@@ -245,28 +261,48 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
     }
     private fun update(dt: Float, w: Float, h: Float) {
         elapsed += dt; fire -= dt; spawn -= dt; skill -= dt; commentTime -= dt
+        // Gemma Player AI: tracks the most dangerous target and repositions to avoid incoming lanes.
+        val targetEnemy = enemies.minByOrNull { kotlin.math.abs(it.x - wx) + kotlin.math.abs(it.y - wy) * .55f }
+        val desiredX = targetEnemy?.x ?: (px - w * .18f)
+        val danger = enemies.firstOrNull { kotlin.math.abs(it.x - wx) < 42f && it.y > wy - 90f }
+        wx += (desiredX.coerceIn(w * .12f, w * .88f) - wx) * min(1f, dt * 2.8f)
+        val desiredY = if (danger != null) h * .60f else h * .77f
+        wy += (desiredY - wy) * min(1f, dt * 1.8f)
+        wx = wx.coerceIn(24f, w - 24f); wy = wy.coerceIn(h * .48f, h - 35f)
         if (fire <= 0f) { val damage = 1 + weaponLevel / 2; shots.add(Shot(px, py - 22f, -610f, damage)); shots.add(Shot(wx, wy - 15f, -560f, damage)); fire = .24f }
         if (skill <= 0f) {
-            repeat(3) { i -> shots.add(Shot(wx + (i - 1) * 17f, wy - 18f, -650f, 2)) }
-            comment = listOf("Gemma: Aku kunci target!", "Gemma: Cover fire, sekarang!", "Gemma: Serangan gabungan!", "Gemma: Awas, musuh di depan!").random()
-            commentTime = 2.3f; skill = 5f
+            val burstX = targetEnemy?.x ?: wx
+            repeat(3) { i -> shots.add(Shot(burstX + (i - 1) * 17f, wy - 18f, -650f, 2 + weaponLevel / 3)) }
+            comment = when { enemies.any { it.boss } -> "Gemma Player: fokus boss, gunakan burst!"; danger != null -> "Gemma Player: manuver menghindar!"; else -> listOf("Gemma Player: target dikunci!", "Gemma Player: cover fire!", "Gemma Player: serangan gabungan!").random() }
+            commentTime = 2.3f; skill = if (enemies.any { it.boss }) 3.5f else 5f
         }
-        if (spawn <= 0f && enemies.size < 9 && defeated < target) {
-            enemies.add(Enemy(Random.nextFloat() * w * .76f + w * .12f, -24f, (2 + stageNumber / 4 + weaponLevel / 3).coerceAtMost(12), 130f + stageNumber * 2f + Random.nextFloat() * 90f))
-            spawn = max(.36f, .9f - defeated * .012f)
+        if (spawn <= 0f && enemies.size < 8 && defeated < target) {
+            val typeHp = (3 + stageNumber / 3 + weaponLevel / 3).coerceAtMost(16)
+            enemies.add(Enemy(Random.nextFloat() * w * .76f + w * .12f, -24f, typeHp, 120f + stageNumber * 2f + Random.nextFloat() * 80f))
+            spawn = max(.34f, .82f - defeated * .009f)
+        }
+        if (defeated >= target && enemies.isEmpty() && !bossSpawned) {
+            val bossHp = 220 + stageNumber * 35
+            enemies.add(Enemy(w * .5f, h * .19f, bossHp, 0f, true)); bossSpawned = true
+            comment = "Gemma Player: BOSS terdeteksi!"; commentTime = 3.5f
+        }
+        enemies.forEach { e ->
+            if (e.boss) { e.x = (w * .5f + kotlin.math.sin(elapsed * .9f) * w * .28f).coerceIn(w * .2f, w * .8f) }
+            else { e.y += e.speed * dt; if (e.y > h + 20f) { e.hp = 0; hp = max(0, hp - 5); comment = "Gemma Player: musuh lolos!"; commentTime = 2f } }
         }
         shots.forEach { it.y += it.speed * dt }
-        enemies.forEach { e -> e.y += e.speed * dt; if (e.y > h + 20f) { e.hp = 0; hp = max(0, hp - 5); comment = "Gemma: Ada musuh yang lolos!"; commentTime = 2f } }
         shots.removeAll { it.y < -30f }
         val hit = mutableSetOf<Shot>(); val dead = mutableSetOf<Enemy>()
-        enemies.forEach { e -> shots.forEach { s ->
-            if (kotlin.math.abs(s.x - e.x) < 28f && kotlin.math.abs(s.y - e.y) < 30f) {
-                e.hp -= s.damage; hit.add(s); if (e.hp <= 0) { dead.add(e); defeated++ }
+        enemies.forEach { e -> shots.forEach { shot ->
+            val hitRadius = if (e.boss) 48f else 28f
+            if (kotlin.math.abs(shot.x - e.x) < hitRadius && kotlin.math.abs(shot.y - e.y) < if (e.boss) 44f else 30f) {
+                e.hp -= shot.damage; hit.add(shot)
+                if (e.hp <= 0) { dead.add(e); if (e.boss) { bossCleared = true; comment = "Gemma Player: boss tumbang!"; commentTime = 3f } else defeated++ }
             }
         } }
         shots.removeAll(hit); enemies.removeAll(dead); enemies.removeAll { it.hp <= 0 }
-        if (hp <= 0) { done = true; onClear(false, max(10, defeated * 5), max(15, defeated * 4), defeated) }
-        else if (defeated >= target && enemies.isEmpty()) { done = true; onClear(true, 120 + stageNumber * 8 + defeated * 5, 100 + stageNumber * 6 + defeated * 4, defeated) }
+        if (hp <= 0) { done = true; onClear(false, max(10, defeated * 5), max(15, defeated * 4), defeated + if (bossCleared) 1 else 0) }
+        else if (defeated >= target && bossCleared && enemies.isEmpty()) { done = true; onClear(true, 180 + stageNumber * 12 + defeated * 6, 150 + stageNumber * 8 + defeated * 5, defeated + 1) }
     }
     private fun ship(c: Canvas, x: Float, y: Float, color: Int, scale: Float) {
         c.save(); c.translate(x, y); c.scale(scale, scale)
@@ -278,7 +314,7 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (e.action == MotionEvent.ACTION_DOWN || e.action == MotionEvent.ACTION_MOVE) {
             px = e.x.coerceIn(28f, width - 28f); py = e.y.coerceIn(height * .42f, height - 45f)
-            wx = (px - width * .15f).coerceIn(24f, width - 24f); wy = (py + 26f).coerceIn(height * .45f, height - 35f)
+            /* Gemma Player repositions autonomously using its tactical AI. */
         }
         return true
     }
