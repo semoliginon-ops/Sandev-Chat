@@ -463,8 +463,9 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
                     gemmaThinking = false
                     gemmaRequestElapsed = 0f
                     decisionTimer = if (raw.isBlank()) 1.8f else 2.4f
-                    val strictAction = Regex("(?i)ACTION\\s*[:=\\-]?\\s*(ATTACK|DODGE|COVER|BOSS|TARGET_LOCK|COVER_FIRE|EVADE|COORDINATED|SKILL)\\b").find(raw)?.groupValues?.get(1)?.uppercase()
-                    val bareAction = raw.lineSequence().map { it.trim().uppercase().trimEnd('.', ',', ':', ';', '*') }.firstOrNull { it in setOf("ATTACK", "DODGE", "COVER", "BOSS", "TARGET_LOCK", "COVER_FIRE", "EVADE", "COORDINATED", "SKILL") }
+                    val normalizedRaw = raw.uppercase().replace("COVER FIRE", "COVER_FIRE").replace("TARGET LOCK", "TARGET_LOCK").replace("COORDINATED STRIKE", "COORDINATED")
+                    val strictAction = Regex("ACTION\\s*[:=\\-]?\\s*(ATTACK|DODGE|COVER|BOSS|TARGET_LOCK|COVER_FIRE|EVADE|COORDINATED|SKILL)\\b").find(normalizedRaw)?.groupValues?.get(1)
+                    val bareAction = normalizedRaw.lineSequence().map { it.trim().trimEnd('.', ',', ':', ';', '*') }.firstOrNull { it in setOf("ATTACK", "DODGE", "COVER", "BOSS", "TARGET_LOCK", "COVER_FIRE", "EVADE", "COORDINATED", "SKILL") }
                     val action = strictAction ?: bareAction
                     if (action != null) {
                         secondsWithoutValidDecision = 0f
