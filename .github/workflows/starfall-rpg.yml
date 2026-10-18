@@ -1,4 +1,4 @@
-name: STARFALL RPG - prototype APK
+name: STARFALL RPG - prototype APK (compile fix)
 on:
   workflow_dispatch:
   push:
