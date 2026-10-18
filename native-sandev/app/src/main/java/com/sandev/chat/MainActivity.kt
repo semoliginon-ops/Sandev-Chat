@@ -240,6 +240,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         addAction(actions, "AI Model") { showModelMenu() }
+        addAction(actions, "Model Tune") { showModelTuneMenu() }
         addAction(actions, "Pengaturan") { showSettingsMenu() }
         root.addView(actions)
 
