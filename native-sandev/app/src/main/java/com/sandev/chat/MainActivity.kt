@@ -1023,12 +1023,20 @@ class MainActivity : AppCompatActivity() {
         blackjackBotBusy = true; renderPage()
         blackjackAiJob = lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val gamePrompt = prompt + "\nMODE: CHAT ONLY. Kamu adalah Naya, tetap ceria, jahil, dan alami. Jangan memilih langkah, jangan draw, jangan ubah skor atau ronde. Jawab hanya dua baris: ACTION: WAIT; COMMENT: balasan singkat yang relevan."
+                val gamePrompt = prompt + "\nMODE: CHAT ONLY. Kamu adalah Naya, tetap ceria, jahil, dan alami. Balas pesan pengguna secara langsung. Jangan memilih langkah, jangan draw, jangan ubah skor atau ronde. Jawab tepat dua baris terpisah:\nACTION: WAIT\nCOMMENT: satu balasan singkat yang relevan dalam bahasa Indonesia."
                 val output = StringBuilder()
                 engine.sendUserPrompt(gamePrompt, predictLength = 80).collect { output.append(it) }
                 val result = output.toString()
-                val comment = Regex("(?im)^\\s*COMMENT\\s*:\\s*(.+)$").find(result)?.groupValues?.get(1)?.trim()
-                    ?: result.lineSequence().filterNot { it.trim().startsWith("ACTION:", true) }.joinToString(" ").trim()
+                val commentMatch = Regex("(?is)\\bCOMMENT\\s*:\\s*(.+)").find(result)
+                val comment = commentMatch?.groupValues?.get(1)
+                    ?.lineSequence()?.firstOrNull()?.trim()
+                    ?.replace(Regex("<\\|[^>]+\\|>"), "")?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: result.lineSequence()
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() && !it.startsWith("ACTION:", true) && !it.contains("MODE: CHAT ONLY", true) }
+                        .lastOrNull()
+                        ?.replace(Regex("<\\|[^>]+\\|>"), "")?.trim().orEmpty()
                 withContext(Dispatchers.Main) {
                     if (comment.isNotBlank()) showBlackjackBubble(comment.take(220))
                     blackjackMessage = if (blackjackRoundActive && blackjackPlayerTurn) "Giliranmu. Draw satu kartu atau Stand untuk menyerahkan giliran." else if (blackjackRoundActive) "Ronde berlangsung. Naya akan mengambil keputusan saat gilirannya." else "Siap untuk ronde berikutnya."
