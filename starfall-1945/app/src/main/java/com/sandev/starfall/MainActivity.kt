@@ -20,6 +20,13 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.lifecycle.lifecycleScope
+import dev.ffmpegkit.llama.Llama
+import dev.ffmpegkit.llama.LlamaConfig
+import dev.ffmpegkit.llama.LlamaModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.random.Random
@@ -35,6 +42,9 @@ class MainActivity : Activity() {
     private var weapon = 0
     private var hull = 0
     private var page = "home"
+    private var battleModel: LlamaModel? = null
+    private var battleInferenceBusy = false
+    private var battleModelChecked = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -124,16 +134,91 @@ class MainActivity : Activity() {
         val items = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(items); root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         addButton(items, "▶ CAMPAIGN — STAGE $stage") { battle() }
-        addButton(items, "HANGAR & SHIP STATUS") { info("HANGAR", "NOVA-01 fighter\nWeapon upgrade: $weapon\nHull upgrade: $hull\nGemma: AI wingman concept\n\nLoadouts and cosmetics are planned for later.") }
+        addButton(items, "HANGAR & SHIP STATUS") { hangar() }
         addButton(items, "WORKSHOP / SHOP") { shop() }
-        addButton(items, "SKILL LAB") { info("SKILL LAB", "PLAYER: Laser Burst, Shield Pulse, Homing Missiles\nGEMMA: Cover Fire, Evasive Maneuver, Coordinated Strike\n\nPrototype auto skill burst has a 5-second cooldown. Full skill trees are not implemented yet.") }
+        addButton(items, "SKILL LAB") { skillLab() }
         addButton(items, "GEMMA — CHAT & PILOT PROFILE") { gemma() }
         addButton(items, "BATTLE RECORDS") { records() }
-        addButton(items, "MISSIONS & SECTOR MAP") { info("CAMPAIGN MAP", "Sector 1: FRONTIER\nNext stage: $stage\n\nThis prototype has a repeatable stage loop. Unique sectors, formations and bosses are future work.") }
-        addButton(items, "SETTINGS") { info("SETTINGS", "Offline prototype • Portrait controls\nSound, touch sensitivity and visual settings are planned.") }
+        addButton(items, "MISSIONS & SECTOR MAP") { sectorMap() }
+        addButton(items, "SETTINGS") { settingsPage() }
         addButton(root, "START BATTLE") { battle() }
         setContentView(root)
     }
+
+    private fun hangar() {
+        page = "hangar"
+        val selected = prefs.getString("ship_class", "NOVA") ?: "NOVA"
+        val root = layout("STARFIGHTER HANGAR", "Pilih kapal • pilihan tersimpan lokal")
+        root.addView(text("NOVA-01 • BALANCED FIGHTER\nHull dan serangan seimbang.", 14f))
+        addButton(root, if (selected == "NOVA") "✓ NOVA-01 EQUIPPED" else "EQUIP NOVA-01") { prefs.edit().putString("ship_class", "NOVA").apply(); hangar() }
+        root.addView(text("GUARDIAN • HEAVY HULL\nHP lebih tinggi untuk bertahan.", 14f))
+        addButton(root, if (selected == "GUARDIAN") "✓ GUARDIAN EQUIPPED" else "EQUIP GUARDIAN") { prefs.edit().putString("ship_class", "GUARDIAN").apply(); hangar() }
+        root.addView(text("STRIKER • FAST ATTACK\nTembakan lebih cepat dan damage tinggi.", 14f))
+        addButton(root, if (selected == "STRIKER") "✓ STRIKER EQUIPPED" else "EQUIP STRIKER") { prefs.edit().putString("ship_class", "STRIKER").apply(); hangar() }
+        root.addView(text("Loadout: " + selected + " • Weapon +" + weapon + " • Hull +" + hull, 13f))
+        addButton(root, "WORKSHOP / UPGRADES") { shop() }
+        addButton(root, "BACK TO COMMAND") { showMenu() }
+        setContentView(root)
+    }
+    private fun skillLab() {
+        page = "skills"
+        val skillLevel = prefs.getInt("skill_burst", 1)
+        val cost = 100 + skillLevel * 100
+        val root = layout("SKILL LAB", "BATTLE ABILITIES • LEVEL " + skillLevel)
+        root.addView(text("LASER BURST\nGemma menembakkan salvo tambahan.\nLevel skill: " + skillLevel, 15f))
+        root.addView(text("Upgrade berikutnya: " + cost + " credits • Saldo: " + credits, 13f))
+        addButton(root, "UPGRADE LASER BURST — " + cost + " CREDITS") {
+            if (credits >= cost) { credits -= cost; prefs.edit().putInt("skill_burst", skillLevel + 1).apply(); save(); skillLab() }
+            else info("NOT ENOUGH CREDITS", "Selesaikan campaign untuk memperoleh credits.")
+        }
+        addButton(root, "BACK TO COMMAND") { showMenu() }
+        setContentView(root)
+    }
+    private fun sectorMap() {
+        page = "map"
+        val root = layout("SECTOR MAP", "FRONTIER SECTOR • CAMPAIGN")
+        root.addView(text("SECTOR " + stage + "\n30 hostiles, lalu Dreadnought boss.\nClear stage membuka sektor berikutnya.\n\nPilot level " + level + " • Total kills " + kills, 15f))
+        addButton(root, "DEPLOY TO SECTOR " + stage) { battle() }
+        addButton(root, "BACK TO COMMAND") { showMenu() }
+        setContentView(root)
+    }
+    private fun settingsPage() {
+        page = "settings"
+        val root = layout("STARFALL SETTINGS", "LOCAL PROFILE • ON-DEVICE")
+        val hints = prefs.getBoolean("battle_hints", true)
+        val autoLoad = prefs.getBoolean("battle_gemma_autoload", true)
+        addButton(root, "Battle hints: " + if (hints) "ON" else "OFF") { prefs.edit().putBoolean("battle_hints", !hints).apply(); settingsPage() }
+        addButton(root, "Auto-load Gemma GGUF: " + if (autoLoad) "ON" else "OFF") { prefs.edit().putBoolean("battle_gemma_autoload", !autoLoad).apply(); settingsPage() }
+        addButton(root, "BACK TO COMMAND") { showMenu() }
+        setContentView(root)
+    }
+    private fun requestBattleGemma(prompt: String, callback: (String) -> Unit) {
+        if (battleInferenceBusy) { callback(""); return }
+        battleInferenceBusy = true
+        lifecycleScope.launch {
+            try {
+                var active = battleModel
+                if (active == null && !battleModelChecked) {
+                    val name = getSharedPreferences("starfall_gemma", MODE_PRIVATE).getString("model_name", null)
+                    val file = name?.let { File(File(filesDir, "models"), it) }
+                    if (file != null && file.exists() && prefs.getBoolean("battle_gemma_autoload", true)) {
+                        active = withContext(Dispatchers.IO) {
+                            Llama.loadModel(file.absolutePath, LlamaConfig(contextSize = 2048, threads = 4, temperature = 0.85f, topP = 0.9f, topK = 40))
+                        }
+                        battleModel = active
+                    }
+                    battleModelChecked = true
+                }
+                if (active == null || !active.isLoaded) callback("")
+                else {
+                    val system = "Kamu Gemma Player, pilot tempur AI dalam SANDEV Starfall 1945. Gunakan status dan riwayat battle untuk keputusan nyata, jangan mengarang kejadian. Balas hanya dua baris: ACTION: ATTACK atau DODGE atau COVER atau BOSS; SAY: komentar Indonesia singkat, alami, bervariasi, sesuai kondisi. ATTACK fokus target terdekat, DODGE menghindari ancaman dekat, COVER mendukung pilot, BOSS memprioritaskan boss."
+                    callback(withContext(Dispatchers.IO) { Llama.complete(active, prompt = prompt, systemPrompt = system, maxTokens = 72).text.trim() })
+                }
+            } catch (_: Exception) { callback("") }
+            finally { battleInferenceBusy = false }
+        }
+    }
+
     private fun shop() {
         page = "shop"
         val root = layout("WORKSHOP", "Credits: $credits")
@@ -175,7 +260,7 @@ class MainActivity : Activity() {
     }
     private fun battle() {
         page = "battle"
-        setContentView(ShooterView(this, weapon, hull, stage) { won, xpGain, creditGain, count ->
+        setContentView(ShooterView(this, weapon, hull, stage, prefs.getString("ship_class", "NOVA") ?: "NOVA", prefs.getInt("skill_burst", 1), { prompt, callback -> requestBattleGemma(prompt, callback) }) { won, xpGain, creditGain, count ->
             reward(xpGain, creditGain); kills += count
             if (won) stage++
             save()
@@ -185,6 +270,7 @@ class MainActivity : Activity() {
         })
     }
     override fun onBackPressed() { if (page == "home") super.onBackPressed() else showMenu() }
+    override fun onDestroy() { if (!battleInferenceBusy) battleModel?.let { Llama.releaseModel(it) }; battleModel = null; super.onDestroy() }
 }
 
 private class LogoView(context: Context) : View(context) {
@@ -204,7 +290,7 @@ private class LogoView(context: Context) : View(context) {
     }
 }
 
-private class ShooterView(context: Context, private val weaponLevel: Int, private val hullLevel: Int, private val stageNumber: Int, val onClear: (Boolean, Int, Int, Int) -> Unit) : View(context) {
+private class ShooterView(context: Context, private val weaponLevel: Int, private val hullLevel: Int, private val stageNumber: Int, private val shipClass: String, private val skillLevel: Int, private val askGemma: (String, (String) -> Unit) -> Unit, val onClear: (Boolean, Int, Int, Int) -> Unit) : View(context) {
     private data class Shot(var x: Float, var y: Float, var speed: Float, var damage: Int)
     private data class Enemy(var x: Float, var y: Float, var hp: Int, var speed: Float, val boss: Boolean = false)
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -213,7 +299,7 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
     private var px = 0f; private var py = 0f; private var wx = 0f; private var wy = 0f
     private var last = System.nanoTime(); private var elapsed = 0f
     private var fire = 0f; private var spawn = 0f; private var skill = 0f
-    private var commentTime = 3f; private var comment = "Gemma: Aku di sisimu! Ayo maju!"
+    private var commentTime = 0f; private var comment = ""; private var gemmaAction = "ATTACK"; private var decisionTimer = 2f; private var gemmaThinking = false; private val battleHistory = mutableListOf<String>()
     private var defeated = 0; private var hp = 100 + hullLevel * 20; private val maxHp = 100 + hullLevel * 20; private var done = false
     private var bossSpawned = false; private var bossCleared = false
     private val target = 30
@@ -253,28 +339,57 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
             }
         }
         ship(c, px, py, Color.rgb(65, 220, 255), 1f); ship(c, wx, wy, Color.rgb(195, 105, 255), .72f)
-        if (commentTime > 0) {
-            p.color = Color.argb(225, 17, 31, 60); c.drawRoundRect(12f, 90f, w - 12f, 142f, 14f, 14f, p)
-            p.color = Color.rgb(215, 190, 255); p.textSize = 13f; c.drawText(comment.take(52), 22f, 121f, p)
+        if (commentTime > 0 && comment.isNotBlank()) {
+            val bubbleW = min(w * .78f, max(150f, comment.length * 6.3f))
+            val bx = (wx - bubbleW * .52f).coerceIn(8f, w - bubbleW - 8f)
+            val by = (wy - 72f).coerceAtLeast(112f)
+            p.color = Color.argb(238, 23, 27, 57); c.drawRoundRect(bx, by - 36f, bx + bubbleW, by + 2f, 12f, 12f, p)
+            p.color = Color.rgb(201, 126, 255); p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f
+            c.drawRoundRect(bx, by - 36f, bx + bubbleW, by + 2f, 12f, 12f, p); p.style = Paint.Style.FILL
+            p.color = Color.rgb(235, 222, 255); p.textSize = 12f
+            c.drawText(comment.take(30), bx + 9f, by - 19f, p)
+            if (comment.length > 30) c.drawText(comment.drop(30).take(30), bx + 9f, by - 5f, p)
         }
         if (!done) postInvalidateDelayed(16)
     }
     private fun update(dt: Float, w: Float, h: Float) {
-        elapsed += dt; fire -= dt; spawn -= dt; skill -= dt; commentTime -= dt
-        // Gemma Player AI: tracks the most dangerous target and repositions to avoid incoming lanes.
-        val targetEnemy = enemies.minByOrNull { kotlin.math.abs(it.x - wx) + kotlin.math.abs(it.y - wy) * .55f }
-        val desiredX = targetEnemy?.x ?: (px - w * .18f)
-        val danger = enemies.firstOrNull { kotlin.math.abs(it.x - wx) < 42f && it.y > wy - 90f }
+        elapsed += dt; fire -= dt; spawn -= dt; skill -= dt; commentTime -= dt; decisionTimer -= dt
+        val danger = enemies.firstOrNull { kotlin.math.abs(it.x - wx) < 52f && it.y > wy - 115f && !it.boss }
+        val targetEnemy = if (gemmaAction == "BOSS") enemies.firstOrNull { it.boss }
+            else enemies.minByOrNull { kotlin.math.abs(it.x - wx) + kotlin.math.abs(it.y - wy) * .55f }
+        if (decisionTimer <= 0f && !gemmaThinking) {
+            gemmaThinking = true; decisionTimer = 9f
+            val nearest = targetEnemy?.let { if (it.boss) "DREADNOUGHT boss HP " + it.hp else "enemy HP " + it.hp + ", x=" + it.x.toInt() + ", y=" + it.y.toInt() } ?: "tidak ada target dekat"
+            val state = "Stage=" + stageNumber + "; pilot hull=" + hp + "/" + maxHp + "; kills=" + defeated + "/" + target + "; Gemma action=" + gemmaAction + "; ancaman dekat=" + (danger != null) + "; target=" + nearest + "; boss=" + (bossSpawned && !bossCleared) + "; skill level=" + skillLevel + ". Riwayat: " + battleHistory.takeLast(6).joinToString(" | ") + ". Pilih keputusan untuk beberapa detik berikutnya."
+            askGemma(state) { raw ->
+                gemmaThinking = false
+                if (raw.isNotBlank()) {
+                    val action = Regex("(?im)^\\s*ACTION\\s*:\\s*(ATTACK|DODGE|COVER|BOSS)").find(raw)?.groupValues?.get(1)?.uppercase()
+                    if (action != null) gemmaAction = action
+                    val say = Regex("(?im)^\\s*SAY\\s*:\\s*(.+)$").find(raw)?.groupValues?.get(1)?.trim()
+                    if (!say.isNullOrBlank()) { comment = say.take(58); commentTime = 4.5f; battleHistory.add(gemmaAction + ": " + comment); if (battleHistory.size > 12) battleHistory.removeAt(0) }
+                }
+                postInvalidateOnAnimation()
+            }
+        }
+        val desiredX = when (gemmaAction) {
+            "COVER" -> px - w * .14f
+            "DODGE" -> if (danger != null) wx + if (danger.x < wx) w * .18f else -w * .18f else targetEnemy?.x ?: (px - w * .14f)
+            else -> targetEnemy?.x ?: (px - w * .18f)
+        }
         wx += (desiredX.coerceIn(w * .12f, w * .88f) - wx) * min(1f, dt * 2.8f)
-        val desiredY = if (danger != null) h * .60f else h * .77f
+        val desiredY = if (gemmaAction == "DODGE" || danger != null) h * .59f else h * .76f
         wy += (desiredY - wy) * min(1f, dt * 1.8f)
         wx = wx.coerceIn(24f, w - 24f); wy = wy.coerceIn(h * .48f, h - 35f)
         if (fire <= 0f) { val damage = 1 + weaponLevel / 2; shots.add(Shot(px, py - 22f, -610f, damage)); shots.add(Shot(wx, wy - 15f, -560f, damage)); fire = .24f }
         if (skill <= 0f) {
-            val burstX = targetEnemy?.x ?: wx
-            repeat(3) { i -> shots.add(Shot(burstX + (i - 1) * 17f, wy - 18f, -650f, 2 + weaponLevel / 3)) }
-            comment = when { enemies.any { it.boss } -> "Gemma Player: fokus boss, gunakan burst!"; danger != null -> "Gemma Player: manuver menghindar!"; else -> listOf("Gemma Player: target dikunci!", "Gemma Player: cover fire!", "Gemma Player: serangan gabungan!").random() }
-            commentTime = 2.3f; skill = if (enemies.any { it.boss }) 3.5f else 5f
+            val priorityTarget = if (gemmaAction == "BOSS") enemies.firstOrNull { it.boss } else targetEnemy
+            val burstX = priorityTarget?.x ?: wx
+            repeat(2 + skillLevel.coerceAtMost(5)) { i ->
+                val spread = (i - ((1 + skillLevel.coerceAtMost(5)) / 2)) * 14f
+                shots.add(Shot(burstX + spread, wy - 18f, -650f, 2 + weaponLevel / 3 + skillLevel / 3))
+            }
+            skill = if (enemies.any { it.boss }) 3.5f else max(2.5f, 5f - skillLevel * .15f)
         }
         if (spawn <= 0f && enemies.size < 8 && defeated < target) {
             val typeHp = (3 + stageNumber / 3 + weaponLevel / 3).coerceAtMost(16)
@@ -284,11 +399,11 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
         if (defeated >= target && enemies.isEmpty() && !bossSpawned) {
             val bossHp = 220 + stageNumber * 35
             enemies.add(Enemy(w * .5f, h * .19f, bossHp, 0f, true)); bossSpawned = true
-            comment = "Gemma Player: BOSS terdeteksi!"; commentTime = 3.5f
+            battleHistory.add("Dreadnought boss muncul setelah " + defeated + " kills."); decisionTimer = 0f
         }
         enemies.forEach { e ->
             if (e.boss) { e.x = (w * .5f + kotlin.math.sin(elapsed * .9f) * w * .28f).coerceIn(w * .2f, w * .8f) }
-            else { e.y += e.speed * dt; if (e.y > h + 20f) { e.hp = 0; hp = max(0, hp - 5); comment = "Gemma Player: musuh lolos!"; commentTime = 2f } }
+            else { e.y += e.speed * dt; if (e.y > h + 20f) { e.hp = 0; hp = max(0, hp - 5); battleHistory.add("Musuh lolos; hull turun 5.") } }
         }
         shots.forEach { it.y += it.speed * dt }
         shots.removeAll { it.y < -30f }
@@ -297,7 +412,7 @@ private class ShooterView(context: Context, private val weaponLevel: Int, privat
             val hitRadius = if (e.boss) 48f else 28f
             if (kotlin.math.abs(shot.x - e.x) < hitRadius && kotlin.math.abs(shot.y - e.y) < if (e.boss) 44f else 30f) {
                 e.hp -= shot.damage; hit.add(shot)
-                if (e.hp <= 0) { dead.add(e); if (e.boss) { bossCleared = true; comment = "Gemma Player: boss tumbang!"; commentTime = 3f } else defeated++ }
+                if (e.hp <= 0) { dead.add(e); if (e.boss) { bossCleared = true; battleHistory.add("Dreadnought boss dikalahkan."); decisionTimer = 0f } else { defeated++; if (defeated % 5 == 0) battleHistory.add("Total kills: " + defeated) } }
             }
         } }
         shots.removeAll(hit); enemies.removeAll(dead); enemies.removeAll { it.hp <= 0 }
