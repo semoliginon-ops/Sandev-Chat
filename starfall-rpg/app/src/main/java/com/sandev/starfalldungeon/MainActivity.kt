@@ -102,6 +102,7 @@ private class ForestGameView(context: Context) : View(context) {
     private val stageBossEmoji = listOf("🐺", "🦂", "🐍", "🦇", "🦍", "🦈", "🧌", "🐉", "👹", "👑")
     private val eliteBossEmoji = listOf("👹", "🐲", "🦖", "☠️", "👑")
     private val regionNames = listOf("Hutan Asterfall", "Rawa Terkutuk", "Pantai Terlupakan", "Pegunungan Beku", "Gurun Kehancuran")
+    private val regionMobEmoji = listOf(listOf("🐺","🦊","🐗","🦌"), listOf("🐸","🐍","🦂","🐊"), listOf("🦀","🐙","🦈","🐚"), listOf("🐻","🦅","🐐","🧊"), listOf("🦂","🐪","🦎","🔥"))
     private var screen = "MAIN"
     private var equipmentReturnScreen = "MAIN"
     private var cityMessage = "Kota Asterfall: bicara dengan warga sebelum masuk hutan."
@@ -156,7 +157,7 @@ private class ForestGameView(context: Context) : View(context) {
     }
 
     private fun refreshAreaBackdrop(force: Boolean = false) {
-        val next = ((campaignStage - 1) / 10).coerceIn(0, 4).coerceAtMost(areaKeys.lastIndex)
+        val next = listOf(0, 1, 2, 4, 5)[((campaignStage - 1) / 10).coerceIn(0, 4)].coerceAtMost(areaKeys.lastIndex)
         if (!force && next == activeAreaIndex && areaBackdrop != null) return
         activeAreaIndex = next
         try {
@@ -642,6 +643,8 @@ private class ForestGameView(context: Context) : View(context) {
                     paint.color = Color.rgb(240,218,157); c.drawCircle(m.x-6,m.y-12,2.5f,paint); c.drawCircle(m.x+6,m.y-12,2.5f,paint)
                 }
                 bar(c,m.x-19,m.y-28,38f,5f,m.hp,m.maxHp,Color.rgb(207,70,65))
+                val mobSet = regionMobEmoji[(campaignStage - 1) / 10]
+                text(c, mobSet[((m.x.toInt() / 37) + m.kind) % mobSet.size], m.x-12f, m.y+2f, 23f, Color.WHITE)
                 if (m.hitEmojiTime > 0f && m.hitEmoji.isNotBlank()) text(c,m.hitEmoji,m.x-12f,m.y-37f,19f,Color.WHITE)
                 if (m.windup > 0f) text(c,"!",m.x-3,m.y-32,16f,Color.YELLOW)
             }
@@ -1172,7 +1175,7 @@ private class ForestGameView(context: Context) : View(context) {
                 menuButton(c, "KEMBALI", 52f, 382f, 190f, 44f)
                 text(c, "LOKASI", 500f, 151f, 12f, Color.rgb(186, 207, 169))
                 text(c, "Kota Asterfall", 500f, 184f, 15f, Color.rgb(191, 218, 172))
-                text(c, "Guardian muncul setelah level 5 dan 18 kill.", 500f, 218f, 11f)
+                text(c, "Bos Campaign muncul setelah 30 monster biasa.", 500f, 218f, 11f)
             }
             "SETTINGS" -> {
                 text(c, "PENGATURAN", 54f, 132f, 12f, Color.rgb(186, 207, 169))
