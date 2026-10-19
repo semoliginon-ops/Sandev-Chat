@@ -9,3 +9,10 @@ All bundled art and sound assets in this change are free-to-use **CC0** assets. 
 Bundled effects: footsteps, weapon slice, impact, and a book-opening cue used for magic. The current change bundles effects only; background music is not yet included. Attribution is not required by CC0, but credited as a courtesy.
 
 - **Animated hero/companion/boar sprites** — Ninja Adventure asset pack (sprites mirrored in sang-guru/NinjaAdventure), CC0 1.0 Universal. The character sheets use a 4-direction, 7-row animation layout. Source: https://github.com/sang-guru/NinjaAdventure
+
+
+## Additional audio and uploaded environment backgrounds
+
+- **Kenney Sci-Fi Sounds** — CC0 1.0 Universal, used for varied projectile/magic shots and boss blasts. https://kenney.nl/assets/sci-fi-sounds
+- **Kenney Impact Sounds** — CC0 1.0 Universal, used for varied impacts and grass footsteps. https://kenney.nl/assets/impact-sounds
+- **User-provided area backgrounds** — copied from `asset starfall rpg/<area>/` into the app assets at build time. Original filenames are preserved. The forest backdrop is downsampled at runtime to limit memory use.

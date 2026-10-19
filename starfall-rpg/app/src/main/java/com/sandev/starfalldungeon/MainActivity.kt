@@ -53,6 +53,7 @@ private class ForestGameView(context: Context) : View(context) {
     private var heroSheet: Bitmap? = null
     private var gemmaSheet: Bitmap? = null
     private var pigSheet: Bitmap? = null
+    private var forestBackdrop: Bitmap? = null
     private var footstepTimer = 0f
     private data class Effect(var x: Float, var y: Float, var tx: Float, var ty: Float, var life: Float, val kind: Int)
     private val effects = mutableListOf<Effect>()
@@ -104,8 +105,29 @@ private class ForestGameView(context: Context) : View(context) {
         try { context.assets.open("graphics/hero_samurai.png").use { heroSheet = BitmapFactory.decodeStream(it) } } catch (_: Exception) {}
         try { context.assets.open("graphics/gemma_ninja.png").use { gemmaSheet = BitmapFactory.decodeStream(it) } } catch (_: Exception) {}
         try { context.assets.open("graphics/pig.png").use { pigSheet = BitmapFactory.decodeStream(it) } } catch (_: Exception) {}
+        // Use one downsampled area backdrop to keep memory use modest on 6 GB phones.
+        try {
+            val candidates = context.assets.list("areas/forest").orEmpty()
+                .filter { it.endsWith(".jpg", true) || it.endsWith(".jpeg", true) || it.endsWith(".png", true) || it.endsWith(".webp", true) }
+                .sorted()
+            candidates.firstOrNull()?.let { file ->
+                val options = BitmapFactory.Options().apply { inSampleSize = 4 }
+                context.assets.open("areas/forest/$file").use { forestBackdrop = BitmapFactory.decodeStream(it, null, options) }
+            }
+        } catch (_: Exception) {}
         listOf("step", "attack", "impact", "spell").forEach { name ->
             try { context.assets.openFd("audio/$name.ogg").use { afd -> soundIds[name] = soundPool.load(afd, 1) } } catch (_: Exception) {}
+        }
+        listOf(
+            "laserSmall_000", "laserSmall_001", "laserSmall_002", "laserSmall_003", "laserSmall_004",
+            "laserRetro_000", "laserRetro_001", "laserRetro_002",
+            "laserLarge_000", "laserLarge_001",
+            "explosionCrunch_000", "explosionCrunch_001", "explosionCrunch_002",
+            "impactGeneric_light_000", "impactGeneric_light_001", "impactGeneric_light_002",
+            "impactMetal_000", "impactMetal_001",
+            "footstep_grass_000", "footstep_grass_001", "footstep_grass_002", "footstep_grass_003", "footstep_grass_004"
+        ).forEach { name ->
+            try { context.assets.openFd("audio/extra/$name.ogg").use { afd -> soundIds[name] = soundPool.load(afd, 1) } } catch (_: Exception) {}
         }
     }
 
@@ -127,9 +149,25 @@ private class ForestGameView(context: Context) : View(context) {
     private fun say(s: String, t: Float = 2f) { message = s; messageTime = t }
     private fun sfx(asset: String, fallback: Int = ToneGenerator.TONE_PROP_BEEP) {
         try {
-            val key = when (asset) { "coins" -> "impact"; "door", "book", "ui" -> "spell"; else -> asset }
-            val id = soundIds[key]
-            val stream = if (id != null) soundPool.play(id, 0.86f, 0.86f, 1, 0, 1f) else 0
+            val candidates = when (asset) {
+                "step" -> listOf("footstep_grass_000", "footstep_grass_001", "footstep_grass_002", "footstep_grass_003", "footstep_grass_004", "step")
+                "attack" -> listOf("laserSmall_000", "laserSmall_001", "laserSmall_002", "laserSmall_003", "laserSmall_004", "attack")
+                "spell" -> listOf("laserRetro_000", "laserRetro_001", "laserRetro_002", "laserLarge_000", "laserLarge_001", "spell")
+                "impact" -> listOf("impactGeneric_light_000", "impactGeneric_light_001", "impactGeneric_light_002", "impactMetal_000", "impactMetal_001", "impact")
+                "coins" -> listOf("impactGeneric_light_002", "impactGeneric_light_000", "impact")
+                "boss" -> listOf("explosionCrunch_000", "explosionCrunch_001", "explosionCrunch_002", "spell")
+                "door", "book", "ui" -> listOf("spell", "laserRetro_001")
+                else -> listOf(asset)
+            }
+            val available = candidates.mapNotNull { soundIds[it] }
+            val id = if (available.isNotEmpty()) available[random.nextInt(available.size)] else null
+            val rate = when (asset) {
+                "step" -> 0.92f + random.nextFloat() * 0.18f
+                "attack", "spell" -> 0.90f + random.nextFloat() * 0.22f
+                else -> 0.94f + random.nextFloat() * 0.14f
+            }
+            val volume = if (asset == "step") 0.48f else 0.78f + random.nextFloat() * 0.16f
+            val stream = if (id != null) soundPool.play(id, volume, volume, 1, 0, rate) else 0
             if (stream == 0) tone.startTone(fallback, if (fallback == ToneGenerator.TONE_PROP_BEEP) 150 else 210)
         } catch (_: Exception) { try { tone.startTone(fallback, 150) } catch (_: Exception) {} }
     }
@@ -241,7 +279,7 @@ private class ForestGameView(context: Context) : View(context) {
     private fun defeat(m: Mob) {
         if (!m.alive) return
         m.alive = false
-        fx(m.x,m.y,m.x,m.y,4,0.55f); sfx("coins", ToneGenerator.TONE_PROP_ACK)
+        fx(m.x,m.y,m.x,m.y,4,0.55f); sfx(if (m.kind == 2) "boss" else "coins", ToneGenerator.TONE_PROP_ACK)
         if (m.kind == 2) { kills++; return }
         kills++
         if (m.kind == 1) { exp += 22; gold += random.nextInt(6, 11) }
@@ -334,6 +372,14 @@ private class ForestGameView(context: Context) : View(context) {
             // Sparse 2-3px grass flecks and tiny soil pixels, not a repeated checker pattern.
             if ((tx * 3 + ty * 11) % 19 == 0) { paint.color = Color.rgb(62, 100, 57); c.drawRect(xx+4,yy+5,xx+7,yy+7,paint) }
             if ((tx * 13 + ty * 5) % 37 == 0) { paint.color = Color.rgb(48, 78, 48); c.drawRect(xx+10,yy+11,xx+13,yy+13,paint) }
+        }
+        // The uploaded forest photo adds real depth beneath the pixel-art world.
+        // A dark tint keeps enemies and hero silhouettes readable over the image.
+        forestBackdrop?.let { bg ->
+            paint.shader = null; paint.alpha = 112; paint.isFilterBitmap = true
+            c.drawBitmap(bg, null, RectF(0f, 0f, 960f, 540f), paint)
+            paint.alpha = 255; paint.isFilterBitmap = false
+            paint.color = Color.argb(82, 8, 25, 17); c.drawRect(0f, 0f, 960f, 540f, paint)
         }
         if (rpgSheet != null) {
             for (gx in 0..14) for (gy in 0..7) {
