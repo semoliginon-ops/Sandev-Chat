@@ -3,6 +3,8 @@ package com.sandev.starfalldungeon
 import android.app.Activity
 import android.os.Bundle
 import android.content.Context
+import android.content.ClipboardManager
+import android.content.ClipData
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -18,6 +20,7 @@ import android.media.SoundPool
 import android.app.AlertDialog
 import android.widget.EditText
 import android.text.InputType
+import org.json.JSONObject
 import android.view.MotionEvent
 import android.view.View
 import android.view.Window
@@ -99,8 +102,22 @@ private class ForestGameView(context: Context) : View(context) {
     private var skillLevel = prefs.getInt("skill_level", 1).coerceIn(1, 5)
 
     init {
+        restoreSavedStats()
         loadGameAssets()
         repeat(4) { spawn(if (it == 2) 1 else 0) }
+    }
+
+    private fun restoreSavedStats() {
+        val baseHp = when (hero) {
+            "Ranger" -> 110f
+            "Mage" -> 90f
+            else -> 140f
+        }
+        maxHp = prefs.getFloat("max_hp", baseHp).coerceIn(baseHp, 10000f)
+        hp = prefs.getFloat("hp", maxHp).coerceIn(1f, maxHp)
+        gemmaMaxHp = prefs.getFloat("gemma_max_hp", 100f).coerceIn(100f, 10000f)
+        gemmaHp = prefs.getFloat("gemma_hp", gemmaMaxHp).coerceIn(1f, gemmaMaxHp)
+        damage = prefs.getFloat("damage", (if (hero == "Ranger") 18f else 14f) + (level - 1) * 2f).coerceIn(1f, 100000f)
     }
 
     private fun loadGameAssets() {
@@ -186,7 +203,107 @@ private class ForestGameView(context: Context) : View(context) {
     }
     private fun fx(sx: Float, sy: Float, tx: Float, ty: Float, kind: Int, life: Float = 0.32f) { effects.add(Effect(sx,sy,tx,ty,life,kind)) }
     private fun save() {
-        prefs.edit().putInt("level", level).putInt("exp", exp).putInt("gold", gold).putInt("kills", kills).putString("player_name", playerName).putString("hero", hero).putInt("potions", potions).putInt("materials", materials).putInt("weapon_level", weaponLevel).putInt("armor_level", armorLevel).putInt("skill_level", skillLevel).apply()
+        prefs.edit()
+            .putInt("save_version", 1)
+            .putInt("level", level).putInt("exp", exp).putInt("gold", gold).putInt("kills", kills)
+            .putString("player_name", playerName).putString("hero", hero)
+            .putInt("potions", potions).putInt("materials", materials)
+            .putInt("weapon_level", weaponLevel).putInt("armor_level", armorLevel).putInt("skill_level", skillLevel)
+            .putFloat("hp", hp).putFloat("max_hp", maxHp)
+            .putFloat("gemma_hp", gemmaHp).putFloat("gemma_max_hp", gemmaMaxHp).putFloat("damage", damage)
+            .apply()
+    }
+
+    private fun exportSaveText(): String = JSONObject()
+        .put("save_version", 1)
+        .put("game", "STARFALL_RPG")
+        .put("level", level).put("exp", exp).put("gold", gold).put("kills", kills)
+        .put("player_name", playerName).put("hero", hero)
+        .put("potions", potions).put("materials", materials)
+        .put("weapon_level", weaponLevel).put("armor_level", armorLevel).put("skill_level", skillLevel)
+        .put("hp", hp.toDouble()).put("max_hp", maxHp.toDouble())
+        .put("gemma_hp", gemmaHp.toDouble()).put("gemma_max_hp", gemmaMaxHp.toDouble())
+        .put("damage", damage.toDouble()).toString(2)
+
+    private fun showExportDialog() {
+        val saveText = exportSaveText()
+        val field = EditText(context).apply {
+            setText(saveText)
+            setSingleLine(false)
+            minLines = 7
+            maxLines = 12
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            setTextIsSelectable(true)
+        }
+        AlertDialog.Builder(context)
+            .setTitle("Ekspor Save Starfall")
+            .setMessage("Cadangan JSON versi 1. Salin dan simpan teks ini agar progres bisa dipulihkan setelah memasang ulang game.")
+            .setView(field)
+            .setNegativeButton("Tutup", null)
+            .setPositiveButton("Salin Save") { _, _ ->
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Starfall RPG Save", saveText))
+                say("Save berhasil disalin ke clipboard.", 3f)
+                invalidate()
+            }
+            .show()
+    }
+
+    private fun showImportDialog() {
+        val field = EditText(context).apply {
+            hint = "Tempel JSON save Starfall di sini"
+            setSingleLine(false)
+            minLines = 7
+            maxLines = 12
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        }
+        AlertDialog.Builder(context)
+            .setTitle("Impor Save Starfall")
+            .setMessage("Tempel cadangan JSON. Save versi lama tanpa penanda versi akan dibaca sebagai versi 1.")
+            .setView(field)
+            .setNegativeButton("Batal", null)
+            .setPositiveButton("Impor") { _, _ -> importSaveText(field.text.toString()) }
+            .show()
+    }
+
+    private fun importSaveText(raw: String) {
+        try {
+            val data = JSONObject(raw)
+            if (data.optString("game", "STARFALL_RPG") != "STARFALL_RPG") {
+                say("File ini bukan save Starfall RPG.", 3f); invalidate(); return
+            }
+            val version = data.optInt("save_version", 1)
+            if (version !in 1..1) {
+                say("Versi save tidak didukung: $version.", 3f); invalidate(); return
+            }
+            level = data.optInt("level", level).coerceIn(1, 200)
+            exp = data.optInt("exp", exp).coerceAtLeast(0)
+            gold = data.optInt("gold", gold).coerceAtLeast(0)
+            kills = data.optInt("kills", kills).coerceAtLeast(0)
+            playerName = data.optString("player_name", playerName).take(18)
+            hero = when (data.optString("hero", hero)) {
+                "Vanguard", "Ranger", "Mage" -> data.optString("hero", hero)
+                else -> "Vanguard"
+            }
+            potions = data.optInt("potions", potions).coerceAtLeast(0)
+            materials = data.optInt("materials", materials).coerceAtLeast(0)
+            weaponLevel = data.optInt("weapon_level", weaponLevel).coerceIn(0, 5)
+            armorLevel = data.optInt("armor_level", armorLevel).coerceIn(0, 5)
+            skillLevel = data.optInt("skill_level", skillLevel).coerceIn(1, 5)
+            val baseHp = when (hero) { "Ranger" -> 110f; "Mage" -> 90f; else -> 140f }
+            maxHp = data.optDouble("max_hp", baseHp.toDouble()).toFloat().coerceIn(baseHp, 10000f)
+            hp = data.optDouble("hp", maxHp.toDouble()).toFloat().coerceIn(1f, maxHp)
+            gemmaMaxHp = data.optDouble("gemma_max_hp", 100.0).toFloat().coerceIn(100f, 10000f)
+            gemmaHp = data.optDouble("gemma_hp", gemmaMaxHp.toDouble()).toFloat().coerceIn(1f, gemmaMaxHp)
+            damage = data.optDouble("damage", ((if (hero == "Ranger") 18f else 14f) + (level - 1) * 2f).toDouble()).toFloat().coerceIn(1f, 100000f)
+            save()
+            screen = "MAIN"
+            moveX = 0f; moveY = 0f
+            say("Save berhasil diimpor. Selamat kembali, ${playerName.ifBlank { "Adventurer" }}!", 4f)
+        } catch (_: Exception) {
+            say("Save tidak valid. Periksa teks JSON lalu coba lagi.", 3f)
+        }
+        invalidate()
     }
     private fun blocked(ax: Float, ay: Float) = cityBlocked(ax, ay)
 
@@ -956,10 +1073,14 @@ private class ForestGameView(context: Context) : View(context) {
                 text(c, "PENGATURAN", 54f, 132f, 12f, Color.rgb(186, 207, 169))
                 text(c, "Mode offline · progres tersimpan lokal.", 56f, 170f, 13f)
                 text(c, "Joystick kiri · Dodge kanan · Arc Slash.", 56f, 207f, 12f)
-                menuButton(c, "KEMBALI KE MENU UTAMA", 52f, 280f, 320f, 46f)
-                text(c, "VISUAL", 500f, 151f, 12f, Color.rgb(186, 207, 169))
-                text(c, "Tema gelap · border pixel · highlight halus.", 500f, 184f, 11f)
-                text(c, "Kontrol dan efek dibuat ringkas untuk layar HP.", 500f, 210f, 11f)
+                menuButton(c, "EKSPOR SAVE", 52f, 236f, 320f, 44f)
+                menuButton(c, "IMPOR SAVE", 52f, 290f, 320f, 44f)
+                menuButton(c, "KEMBALI KE MENU UTAMA", 52f, 360f, 320f, 46f)
+                text(c, "SAVE PROGRES", 500f, 151f, 12f, Color.rgb(186, 207, 169))
+                text(c, "Backup JSON versi 1 bisa disalin.", 500f, 184f, 11f)
+                text(c, "Save lama tanpa nomor versi tetap dibaca.", 500f, 210f, 11f)
+                text(c, "Impor save memulihkan level, gold,", 500f, 244f, 11f)
+                text(c, "equipment, item, HP dan progres.", 500f, 264f, 11f)
             }
             "PAUSE" -> {
                 text(c, "PERMAINAN DIJEDA", 54f, 132f, 12f, Color.rgb(186, 207, 169))
@@ -1037,7 +1158,11 @@ private class ForestGameView(context: Context) : View(context) {
                 hit(52f,382f,190f,44f) -> {screen=equipmentReturnScreen;moveX=0f;moveY=0f}
             }
             "QUESTS" -> if(hit(52f,382f,190f,44f))screen="PAUSE"
-            "SETTINGS" -> if(hit(52f,280f,320f,46f))screen="MAIN"
+            "SETTINGS" -> when {
+                hit(52f,236f,320f,44f) -> showExportDialog()
+                hit(52f,290f,320f,44f) -> showImportDialog()
+                hit(52f,360f,320f,46f) -> screen="MAIN"
+            }
             "PAUSE" -> when {
                 hit(52f,150f,370f,44f)->screen="GAME"
                 hit(52f,208f,180f,44f)->screen="CHARACTER"
