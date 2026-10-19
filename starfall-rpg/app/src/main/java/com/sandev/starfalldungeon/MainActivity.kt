@@ -193,7 +193,7 @@ private class ForestGameView(context: Context) : View(context) {
         var sx = 38f; var sy = 350f; var tries = 0
         do {
             sx = if (random.nextBoolean()) 38f else 922f
-            sy = 330f + random.nextFloat() * 105f
+            sy = 350f + random.nextFloat() * 85f
             tries++
         } while (tries < 18 && (dist(sx, sy, x, y) < 190f || cityBlocked(sx, sy)))
         val max = if (kind == 1) 85f else if (kind == 2) 1200f else 50f
@@ -366,7 +366,7 @@ private class ForestGameView(context: Context) : View(context) {
         if (screen == "GAME") {
             update(0.016f)
             if (screenShake > 0f) canvas.translate((kotlin.math.sin(clock*95f)*screenShake*20f), (kotlin.math.cos(clock*81f)*screenShake*10f))
-            drawCity(canvas); drawCharacters(canvas); drawEffects(canvas); drawHud(canvas)
+            drawBattleArena(canvas); drawCharacters(canvas); drawEffects(canvas); drawHud(canvas)
         } else if (screen == "CITY") {
             updateCity(0.016f)
             drawCity(canvas)
@@ -706,6 +706,47 @@ private class ForestGameView(context: Context) : View(context) {
         // Party, enemies, combat effects and controls are drawn above this map.
     }
 
+
+    private fun drawBattleArena(c: Canvas) {
+        // Battle Asterfall is a distinct, invaded variant of the safe city: same medieval
+        // architecture, but darker lighting, damaged paving and marked monster entry lanes.
+        drawCity(c)
+        paint.shader = LinearGradient(0f, 130f, 0f, 540f,
+            Color.argb(22, 48, 18, 25), Color.argb(92, 34, 12, 20), Shader.TileMode.CLAMP)
+        c.drawRect(0f, 130f, 960f, 540f, paint)
+        paint.shader = null
+        val scorch = listOf(
+            RectF(24f, 352f, 84f, 394f),
+            RectF(188f, 420f, 260f, 452f),
+            RectF(365f, 350f, 425f, 384f),
+            RectF(570f, 421f, 650f, 452f),
+            RectF(850f, 354f, 932f, 400f)
+        )
+        scorch.forEachIndexed { i, r ->
+            paint.color = Color.argb(58, 35, 23, 22)
+            c.drawOval(r, paint)
+            paint.color = Color.argb(65, 151, 67, 45)
+            c.drawOval(RectF(r.left + 8f, r.top + 6f, r.right - 8f, r.bottom - 7f), paint)
+            if (i % 2 == 0) {
+                paint.color = Color.argb(95, 202, 139, 75)
+                c.drawLine(r.centerX() - 8f, r.centerY() - 5f, r.centerX() + 10f, r.centerY() + 6f, paint)
+                c.drawLine(r.centerX() + 10f, r.centerY() + 6f, r.centerX() + 17f, r.centerY() - 2f, paint)
+            }
+        }
+        // Glowing entry seals indicate where enemies are advancing from either side.
+        listOf(42f, 918f).forEach { sx ->
+            paint.color = Color.argb(42, 235, 72, 54)
+            c.drawCircle(sx, 390f, 30f + kotlin.math.sin(clock * 3f) * 2f, paint)
+            paint.color = Color.argb(185, 205, 80, 58)
+            paint.style = Paint.Style.STROKE; paint.strokeWidth = 2f
+            c.drawCircle(sx, 390f, 19f, paint)
+            c.drawCircle(sx, 390f, 10f, paint)
+            c.drawLine(sx - 24f, 390f, sx + 24f, 390f, paint)
+            c.drawLine(sx, 366f, sx, 414f, paint)
+            paint.style = Paint.Style.FILL; paint.strokeWidth = 1f
+        }
+        text(c, "INVASION ZONE", 786f, 112f, 10f, Color.rgb(255, 191, 154))
+    }
 
     private fun drawCityCharacters(c: Canvas) {
         fun citizen(cx: Float, feetY: Float, robe: Int, hair: Int, label: String) {
