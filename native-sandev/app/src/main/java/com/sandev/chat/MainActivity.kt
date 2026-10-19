@@ -496,6 +496,29 @@ class MainActivity : AppCompatActivity() {
         }
         chatColumn.addView(gameCard, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(16) })
 
+        val starfallCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            background = panelBackground(p.panel, Color.rgb(116, 86, 190), 18)
+        }
+        starfallCard.addView(TextView(this).apply {
+            text = "✦  STARFALL RPG"; textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.rgb(190, 160, 255))
+        })
+        starfallCard.addView(TextView(this).apply {
+            text = "Petualangan fantasi offline"; textSize = 18f
+            typeface = Typeface.DEFAULT_BOLD; setTextColor(p.text)
+            setPadding(0, dp(5), 0, dp(4))
+        })
+        starfallCard.addView(TextView(this).apply {
+            text = "Mainkan Starfall RPG dengan save lokal. AI Sandev dan llama.cpp tetap tersedia."
+            textSize = 12f; setTextColor(p.muted)
+        })
+        addAction(starfallCard, "Main Starfall RPG") {
+            startActivity(android.content.Intent(this, com.sandev.chat.starfall.StarfallActivity::class.java))
+        }
+        chatColumn.addView(starfallCard, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(16) })
+
         val search = EditText(this).apply {
             hint = "⌕  Cari nama atau deskripsi karakter..."
             setSingleLine(true)
