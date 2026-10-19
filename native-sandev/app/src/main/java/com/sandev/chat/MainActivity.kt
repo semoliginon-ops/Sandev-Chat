@@ -913,6 +913,9 @@ class MainActivity : AppCompatActivity() {
                 }
             },
             onFailure = { reason ->
+                // Keep the model selectable so the user can retry recovery without re-importing it.
+                activeModelName = file.name
+                prefs().edit().putString(KEY_ACTIVE_MODEL, file.name).apply()
                 blackjackRecoveryNeedsBotTurn = resumeBotTurn && blackjackRoundActive
                 blackjackMessage = "Pemulihan AI gagal: $reason. Coba tekan Pulihkan AI lagi."
                 renderPage()
