@@ -5,6 +5,9 @@ import android.os.Bundle
 import android.content.Context
 import android.content.ClipboardManager
 import android.content.ClipData
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -31,12 +34,86 @@ import kotlin.math.sqrt
 import kotlin.random.Random
 
 class MainActivity : Activity() {
+    private lateinit var gameView: ForestGameView
+    private lateinit var gemmaAi: GemmaLocalAi
+    private val modelPickerRequest = 814
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestWindowFeature(Window.FEATURE_NO_TITLE)
         window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN)
         window.decorView.systemUiVisibility = 5894 or 1024 or 512
-        setContentView(ForestGameView(this))
+        gameView = ForestGameView(this)
+        gemmaAi = GemmaLocalAi(
+            this,
+            onStatus = { status -> if (::gameView.isInitialized) gameView.setGemmaStatus(status) },
+            onChatReply = { reply ->
+                gameView.receiveGemmaReply(reply)
+                AlertDialog.Builder(this).setTitle("Gemma · Starfall RPG").setMessage(reply)
+                    .setPositiveButton("Balas lagi") { _, _ -> showGemmaChat() }
+                    .setNegativeButton("Tutup", null).show()
+            },
+            onTactic = { action, comment -> gameView.applyGemmaTactic(action, comment) }
+        )
+        setContentView(gameView)
+        gemmaAi.initialize()
+    }
+
+    internal fun showGemmaPanel() {
+        val options = arrayOf("Chat dengan Gemma", "Impor / ganti model GGUF", "Status model lokal")
+        AlertDialog.Builder(this).setTitle("Gemma · Pendamping AI lokal")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showGemmaChat()
+                    1 -> {
+                        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "*/*"
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        startActivityForResult(intent, modelPickerRequest)
+                    }
+                    else -> AlertDialog.Builder(this).setTitle("Status Gemma")
+                        .setMessage(gameView.getGemmaStatus() + "\n\nModel: " + gemmaAi.activeModelName() +
+                            "\n\nModel berjalan sepenuhnya di perangkat setelah diimpor.")
+                        .setPositiveButton("OK", null).show()
+                }
+            }.show()
+    }
+
+    private fun showGemmaChat() {
+        val field = EditText(this).apply {
+            hint = "Tulis pesan untuk Gemma…"
+            minLines = 2
+            maxLines = 4
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        }
+        AlertDialog.Builder(this).setTitle("Bicara dengan Gemma").setMessage("Percakapan memakai model lokal dan kondisi game saat ini.")
+            .setView(field)
+            .setNegativeButton("Batal", null)
+            .setPositiveButton("Kirim") { _, _ ->
+                val message = field.text.toString().trim()
+                if (message.isNotBlank()) gemmaAi.chat(message, gameView.aiGameState())
+                else Toast.makeText(this, "Tulis pesan dulu ya.", Toast.LENGTH_SHORT).show()
+            }.show()
+    }
+
+    internal fun requestGemmaTactic(gameState: String) {
+        if (::gemmaAi.isInitialized) gemmaAi.requestTactic(gameState)
+    }
+
+    @Deprecated("Deprecated in Android, kept for broad device compatibility")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == modelPickerRequest && resultCode == RESULT_OK) {
+            val uri: Uri = data?.data ?: return
+            gemmaAi.importModel(uri)
+        }
+    }
+
+    override fun onDestroy() {
+        if (::gemmaAi.isInitialized) gemmaAi.close()
+        super.onDestroy()
     }
 }
 
@@ -48,6 +125,44 @@ private data class Mob(
 )
 
 private class ForestGameView(context: Context) : View(context) {
+    private var gemmaStatus = "Menyiapkan mesin AI lokal…"
+    private var gemmaAiDecisionTimer = 9f
+
+    fun setGemmaStatus(status: String) { gemmaStatus = status; invalidate() }
+    fun getGemmaStatus(): String = gemmaStatus
+
+    fun receiveGemmaReply(reply: String) {
+        gemmaChat = reply.take(180)
+        pendingGemmaChat = null
+        gemmaChatTime = 5.5f
+        gemmaChatTimer = 9f
+        invalidate()
+    }
+
+    fun applyGemmaTactic(action: String, comment: String) {
+        // Strict whitelist: the model cannot call game methods or mutate arbitrary save data.
+        command = when (action.uppercase()) {
+            "ATTACK" -> "ATTACK"
+            "KEEP_DISTANCE" -> "RANGE"
+            "GUARD" -> "GUARD"
+            else -> "FOLLOW"
+        }
+        gemmaChat = comment.take(180)
+        pendingGemmaChat = null
+        gemmaChatTime = 3.8f
+        gemmaChatTimer = 12f
+        invalidate()
+    }
+
+    fun aiGameState(): String {
+        val nearest = mobs.filter { it.alive }.minByOrNull { dist(it.x, it.y, x, y) }
+        val nearestDistance = nearest?.let { dist(it.x, it.y, x, y).toInt() } ?: -1
+        val aliveCount = mobs.count { it.alive }
+        return "Stage=$campaignStage; playerHP=${hp.toInt()}/${maxHp.toInt()}; GemmaHP=${gemmaHp.toInt()}/${gemmaMaxHp.toInt()}; " +
+            "mana=${mana.toInt()}/${maxMana.toInt()}; enemies=$aliveCount; nearestEnemyDistance=$nearestDistance; currentCommand=$command; " +
+            "playerLevel=$level; bossAlive=${mobs.any { it.alive && it.kind == 2 }}"
+    }
+
     private val prefs = context.getSharedPreferences("starfall_rpg_save", Context.MODE_PRIVATE)
     private val paint = Paint().apply { isAntiAlias = true; typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD) }
     private val tone = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
@@ -366,6 +481,11 @@ private class ForestGameView(context: Context) : View(context) {
         mobs.forEach { it.hitEmojiTime = max(0f, it.hitEmojiTime - dt); if (it.hitEmojiTime <= 0f) it.hitEmoji = "" }
         messageTime = max(0f, messageTime - dt)
         gemmaChatTime = max(0f, gemmaChatTime - dt); gemmaChatTimer -= dt
+        gemmaAiDecisionTimer -= dt
+        if (gemmaAiDecisionTimer <= 0f) {
+            gemmaAiDecisionTimer = 14f
+            (context as? MainActivity)?.requestGemmaTactic(aiGameState())
+        }
         if (gemmaChatTimer <= 0f) {
             gemmaChat = pendingGemmaChat ?: gemmaRandomTalk()
             pendingGemmaChat = null
@@ -1085,6 +1205,7 @@ private class ForestGameView(context: Context) : View(context) {
                 text(c, "Offline  ·  Save lokal  ·  Pixel fantasy RPG", 510f, 412f, 11f, Color.rgb(144, 177, 155))
                 text(c, "Progres tersimpan otomatis di perangkat.", 510f, 435f, 10f, Color.rgb(144, 177, 155))
                 text(c, "50 stage · 5 wilayah · Elite Boss tiap 10 stage", 510f, 455f, 10f, Color.rgb(241, 216, 153))
+                text(c, ("AI: " + gemmaStatus).take(54), 510f, 476f, 9f, Color.rgb(185, 207, 195))
                 menuButton(c, "STATUS GEMMA", 510f, 386f, 340f, 42f)
             }
             "CAMPAIGN" -> {
@@ -1258,7 +1379,7 @@ private class ForestGameView(context: Context) : View(context) {
                 hit(52f,382f,185f,44f) -> screen="CAMPAIGN"
                 hit(252f,382f,190f,44f) -> screen="SETTINGS"
                 hit(510f,326f,340f,52f) -> {screen="CITY";x=470f;y=370f;gemmaX=425f;gemmaY=395f;moveX=0f;moveY=0f;cityMessage="Asterfall City: zona aman.";say(cityMessage,2.5f);sfx("door",ToneGenerator.TONE_PROP_ACK)}
-                hit(510f,386f,340f,42f) -> screen="GEMMA"
+                hit(510f,386f,340f,42f) -> { screen="GEMMA"; (context as? MainActivity)?.showGemmaPanel() }
             }
             "CAMPAIGN" -> {
                 if (hit(52f,455f,180f,42f)) screen = "MAIN"
