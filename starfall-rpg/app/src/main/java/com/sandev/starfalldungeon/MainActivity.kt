@@ -54,6 +54,7 @@ private class ForestGameView(context: Context) : View(context) {
     private var gemmaSheet: Bitmap? = null
     private var pigSheet: Bitmap? = null
     private var areaBackdrop: Bitmap? = null
+    private var activeAreaIndex = 0
     private val areaKeys = listOf("forest", "rawa", "pantai", "pegunungan", "salju", "gurun", "vulkanik")
     private val areaNames = listOf("Hutan", "Rawa", "Pantai", "Pegunungan", "Salju", "Gurun", "Vulkanik")
     private var footstepTimer = 0f
