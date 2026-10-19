@@ -1,6 +1,14 @@
 name: STARFALL RPG - local Gemma prototype
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [game/asterfall-action-map]
+    paths:
+      - 'starfall-rpg/**'
+      - 'native-sandev/scripts/**'
+      - 'native-sandev/patches/**'
+      - 'native-sandev/gradle/libs.versions.toml'
+      - '.github/workflows/starfall-rpg.yml'
   push:
     branches: [game/starfall-rpg-prototype, game/asterfall-action-map, game/starfall-local-gemma-ai]
     paths:
