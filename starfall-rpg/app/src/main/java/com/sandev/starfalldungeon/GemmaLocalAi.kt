@@ -99,7 +99,7 @@ internal class GemmaLocalAi(
                 }
                 if (target.exists() && !target.delete()) error("Tidak bisa mengganti file model lama.")
                 if (!temp.renameTo(target)) error("Gagal menyimpan file model.")
-                withContext(Dispatchers.Main) { loadModel(target!!) }
+                withContext(Dispatchers.Main) { busy = false; loadModel(target!!) }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     busy = false
