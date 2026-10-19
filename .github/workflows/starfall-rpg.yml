@@ -2,7 +2,7 @@ name: STARFALL RPG - prototype APK (compile fix)
 on:
   workflow_dispatch:
   push:
-    branches: [game/starfall-rpg-prototype]
+    branches: [game/starfall-rpg-prototype, game/asterfall-action-map]
     paths:
       - 'starfall-rpg/**'
 permissions:
