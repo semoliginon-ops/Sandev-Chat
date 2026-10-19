@@ -1,0 +1,60 @@
+name: Sandev Chat Native Android build
+
+on:
+  push:
+    branches: [rewrite/pocketpal-architecture]
+    paths:
+      - 'native-sandev/**'
+      - '.github/workflows/native-sandev-android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout native Sandev source
+        uses: actions/checkout@v4
+        with:
+          ref: rewrite/pocketpal-architecture
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android native build tools
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+
+      - name: Prepare pinned llama.cpp engine and low-memory patch
+        run: sh native-sandev/scripts/prepare-engine.sh
+
+      - name: Compile debug APK
+        working-directory: native-sandev
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --stacktrace assembleDebug
+
+      - name: Verify APK and report size
+        run: |
+          APK="native-sandev/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          ls -lh "$APK"
+          sha256sum "$APK"
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandev-chat-native-debug
+          path: native-sandev/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
