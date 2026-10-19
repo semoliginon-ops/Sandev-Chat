@@ -1033,7 +1033,7 @@ private class ForestGameView(context: Context) : View(context) {
             }
             "EQUIPMENT" -> when {
                 hit(52f,183f,370f,44f) -> {val cost=(weaponLevel+1)*55;if(weaponLevel<5&&gold>=cost){gold-=cost;weaponLevel++;save();say("Senjata ditingkatkan.")}else say("Gold kurang atau level maksimum.")}
-                hit(52f,281f,370f,44f) -> {val cost=(armorLevel+1)*50;if(armorLevel<5&&gold>=gold && gold>=cost){gold-=cost;armorLevel++;save();say("Armor ditingkatkan.")}else say("Gold kurang atau level maksimum.")}
+                hit(52f,281f,370f,44f) -> {val cost=(armorLevel+1)*50;if(armorLevel<5&&gold>=cost){gold-=cost;armorLevel++;save();say("Armor ditingkatkan.")}else say("Gold kurang atau level maksimum.")}
                 hit(52f,382f,190f,44f) -> {screen=equipmentReturnScreen;moveX=0f;moveY=0f}
             }
             "QUESTS" -> if(hit(52f,382f,190f,44f))screen="PAUSE"
