@@ -1,4 +1,5 @@
 name: Blackjack feature branch Android build
+# Keep the isolated feature branch build independently verifiable.
 
 on:
   push:
