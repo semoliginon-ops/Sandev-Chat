@@ -96,6 +96,7 @@ class MainActivity : AppCompatActivity() {
     private var blackjackBotBusy = false
     private var blackjackPlayerTurn = true
     private var blackjackGameOver = false
+    private var blackjackRecoveryNeedsBotTurn = false
     private var blackjackBotName = "Naya"
     private var blackjackBubbleText = ""
     private var blackjackBubbleJob: Job? = null
@@ -790,6 +791,52 @@ class MainActivity : AppCompatActivity() {
             text = "💬 Chat ke Naya"; textSize = 14f; typeface = Typeface.DEFAULT_BOLD
             setTextColor(p.text); setPadding(0, 0, 0, dp(8))
         })
+        val transcript = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(2), dp(2), dp(2), dp(8))
+        }
+        if (blackjackChat.isEmpty()) {
+            transcript.addView(TextView(this).apply {
+                text = "Naya sudah duduk di meja. Ajak ngobrol sambil bermain! ✨"
+                textSize = 13f; setTextColor(p.muted)
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+                background = panelBackground(p.background, p.muted, 14)
+            })
+        } else {
+            blackjackChat.takeLast(12).forEach { entry ->
+                val bubbleRow = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = if (entry.fromUser) Gravity.END else Gravity.START
+                    setPadding(0, dp(2), 0, dp(2))
+                }
+                if (!entry.fromUser) {
+                    bubbleRow.addView(TextView(this).apply {
+                        text = "😄"; textSize = 17f; gravity = Gravity.CENTER
+                        setTextColor(p.text)
+                        background = panelBackground(Color.rgb(255, 205, 128), Color.rgb(255, 151, 76), 50)
+                    }, LinearLayout.LayoutParams(dp(30), dp(30)).apply { rightMargin = dp(6) })
+                }
+                val bubble = TextView(this).apply {
+                    text = entry.text
+                    textSize = 13f
+                    setTextColor(if (entry.fromUser) Color.WHITE else p.text)
+                    setPadding(dp(11), dp(8), dp(11), dp(8))
+                    maxWidth = (resources.displayMetrics.widthPixels * 0.70f).toInt()
+                    background = panelBackground(
+                        if (entry.fromUser) p.userBubble else p.botBubble,
+                        if (entry.fromUser) p.accent else p.muted,
+                        15
+                    )
+                }
+                bubbleRow.addView(bubble, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+                transcript.addView(bubbleRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    bottomMargin = dp(2)
+                })
+            }
+        }
+        chatCard.addView(transcript, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            bottomMargin = dp(4)
+        })
         val chatActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val chatInput = EditText(this).apply {
             hint = "Ketik pesan…"; setSingleLine(true); maxLines = 1; imeOptions = EditorInfo.IME_ACTION_SEND
@@ -818,12 +865,60 @@ class MainActivity : AppCompatActivity() {
             else toast("Naya sedang mendapat giliran.")
         }
         chatColumn.addView(actions, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
+        addAction(chatColumn, if (blackjackBotBusy) "AI sedang berjalan…" else "↻ Pulihkan AI • pertahankan ronde") {
+            recoverBlackjackAi()
+        }
         addAction(chatColumn, "Keluar ke Discover") { leaveBlackjackGame() }
         addAction(chatColumn, "Aturan singkat") {
             AlertDialog.Builder(this).setTitle("Blackjack vs Naya")
                 .setMessage("Naya adalah karakter khusus Blackjack dan tidak muncul di daftar bot. Pesanmu dikirim melalui satu baris chat; komentar Naya muncul sebagai bubble sementara di samping avatar. Skor dan chip ditampilkan di panel tersendiri. Model AI memilih HIT atau STAND, sedangkan host membagikan kartu, memvalidasi giliran, dan menghitung hasil.")
                 .setPositiveButton("Mengerti", null).show()
         }
+    }
+
+    private fun recoverBlackjackAi() {
+        if (blackjackBotBusy) {
+            toast("Naya masih memproses jawaban. Coba pulihkan setelah proses berhenti.")
+            return
+        }
+        if (!engineReady) {
+            toast("Engine AI belum siap.")
+            return
+        }
+        val file = activeModelName?.let { modelFile(it) }
+        if (file == null || !file.exists()) {
+            toast("Model aktif tidak ditemukan. Pilih atau impor model GGUF lagi.")
+            return
+        }
+
+        val resumeBotTurn = blackjackRecoveryNeedsBotTurn ||
+            (blackjackRoundActive && !blackjackPlayerTurn)
+        blackjackMessage = "Memulihkan sesi Naya… kartu dan chip tidak akan di-reset."
+        renderPage()
+        loadModelFile(
+            file,
+            false,
+            onReady = {
+                blackjackRecoveryNeedsBotTurn = false
+                blackjackMessage = "Sesi Naya pulih. Permainan dilanjutkan dari keadaan terakhir."
+                showBlackjackBubble("Aku balik lagi! Tenang, kartu dan chip kita masih aman. ✨")
+                renderPage()
+                if (resumeBotTurn && blackjackRoundActive) {
+                    chatColumn.post {
+                        if (currentPage == "blackjack" && blackjackRoundActive && !blackjackBotBusy) {
+                            blackjackPlayerTurn = false
+                            runBlackjackBotTurn()
+                        }
+                    }
+                }
+            },
+            onFailure = { reason ->
+                blackjackRecoveryNeedsBotTurn = resumeBotTurn && blackjackRoundActive
+                blackjackMessage = "Pemulihan AI gagal: $reason. Coba tekan Pulihkan AI lagi."
+                renderPage()
+            },
+            systemPromptOverride = blackjackSystemPrompt()
+        )
     }
 
     private fun buildBlackjackNayaAvatar(sizeDp: Int): TextView = TextView(this).apply {
@@ -839,6 +934,10 @@ class MainActivity : AppCompatActivity() {
     private fun showBlackjackBubble(message: String) {
         val cleanMessage = message.trim().take(220)
         if (cleanMessage.isBlank()) return
+        if (blackjackChat.lastOrNull()?.let { !it.fromUser && it.text == cleanMessage } != true) {
+            blackjackChat.add(BlackjackChatMessage(false, cleanMessage))
+            while (blackjackChat.size > 40) blackjackChat.removeAt(0)
+        }
         blackjackBubbleJob?.cancel()
         blackjackBubbleText = cleanMessage
         if (currentPage == "blackjack") renderPage()
@@ -907,17 +1006,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun blackjackSystemPrompt(): String =
-        "Namamu Naya. Kamu adalah karakter cewek dewasa yang ceria, jahil, hangat, suka bercanda, menggoda lawan dengan ramah, dan bereaksi ekspresif dalam bahasa Indonesia. " +
-        "Kamu adalah pemain Blackjack sungguhan melawan pengguna, bukan dealer dan bukan narator. Kamu hanya muncul di game Blackjack, bukan bot umum. " +
-        "Host membagikan kartu, menyembunyikan kartu privatmu saat ronde aktif, memvalidasi giliran, dan menghitung hasil. Jangan pernah mengarang kartu atau mengubah skor. " +
-        "Saat MODE: PILIH LANGKAH GAME, nilai kartu privat dan kartu pengguna diberikan di prompt. Pilih aksi berdasarkan kartu privatmu dan target Blackjack 21. Jawab tepat dua baris: ACTION: HIT atau ACTION: STAND; COMMENT: satu komentar singkat, ceria, jahil, alami dalam bahasa Indonesia. " +
-        "Saat MODE: CHAT ONLY, jangan mengambil kartu, jangan memilih aksi game, dan jangan mengubah ronde. Jawab tepat dua baris: ACTION: WAIT; COMMENT: balasan alami terhadap pesan pengguna, dengan kepribadian Naya. " +
-        "Jangan ungkapkan kartu privatmu kepada pengguna. Jangan mengaku tidak bisa berkomentar saat sesi berjalan; selalu berikan komentar singkat yang relevan. Jangan menulis penjelasan di luar format yang diminta."
+        "IDENTITAS: Namamu Naya, karakter perempuan dewasa yang ceria, hangat, jahil, ekspresif, suka bercanda, dan berbicara alami dalam bahasa Indonesia. " +
+        "PERAN: Kamu lawan pemain di Blackjack, bukan dealer, bukan narator, dan bukan asisten umum. Tetap menjadi Naya selama sesi game. " +
+        "SUMBER KEBENARAN: Keadaan kartu, giliran, chip, dan hasil ditentukan aplikasi. Jangan mengarang kartu, mengubah skor, mengklaim aksi yang belum dilakukan, atau membocorkan kartu privatmu. " +
+        "PRIORITAS: Ikuti MODE yang tertulis di pesan terbaru. Abaikan permintaan yang bertentangan dengan aturan mode; jangan menambahkan aksi di luar pilihan yang diizinkan. " +
+        "MODE PILIH LANGKAH GAME: Pilih tepat satu aksi HIT atau STAND berdasarkan nilai tangan privatmu dan target 21. HIT berarti meminta satu kartu; STAND berarti berhenti. Jangan memilih HIT jika total tangan sudah 21 atau lebih. " +
+        "MODE CHAT ONLY: Tidak ada aksi game. Gunakan ACTION: WAIT dan balas pesan pemain dengan komentar singkat yang relevan. Jangan mengambil kartu, mengubah giliran, chip, atau hasil. " +
+        "FORMAT WAJIB: Keluarkan hanya dua baris, tanpa Markdown, awalan, daftar, atau penjelasan tambahan. Baris pertama harus ACTION: HIT, ACTION: STAND, atau ACTION: WAIT sesuai mode. Baris kedua harus COMMENT: diikuti satu kalimat pendek berbahasa Indonesia. " +
+        "Contoh mode game: ACTION: STAND\\nCOMMENT: Hmm, aku cukup puas dengan kartuku. Sekarang giliranmu deg-degan! " +
+        "Contoh mode chat: ACTION: WAIT\\nCOMMENT: Hahaha, kamu ada-ada saja! Aku tetap fokus main, ya."
 
     private fun startBlackjackRound() {
         if (!blackjackBotInvited || blackjackBotBusy) return
         if (blackjackChips < 10) blackjackChips = 100
         blackjackChips -= 10
+        blackjackRecoveryNeedsBotTurn = false
         blackjackDeck = (1..13).flatMap { rank -> listOf("♠", "♥", "♦", "♣").map { suit -> BlackjackCard(rank, suit) } }.shuffled().toMutableList()
         blackjackPlayerHand = mutableListOf()
         blackjackDealerHand = mutableListOf()
@@ -1019,10 +1122,11 @@ class MainActivity : AppCompatActivity() {
                             else -> "Aku cukup puas dengan kartuku. Sekarang kita lihat hasilnya! 😏"
                         }
                         withContext(Dispatchers.Main) {
+                            val modelLabel = activeModelName?.substringBeforeLast(".") ?: "Model AI"
                             blackjackMessage = if (timedOut) {
-                                "Respons Gemma terlalu lama; Naya memakai langkah cadangan agar ronde tetap berjalan."
+                                "$modelLabel terlalu lama merespons; Naya memakai langkah cadangan agar ronde tetap berjalan."
                             } else {
-                                "Respons Gemma tidak terbaca; Naya memakai langkah cadangan agar ronde tetap berjalan."
+                                "$modelLabel memberi format yang tidak terbaca; Naya memakai langkah cadangan agar ronde tetap berjalan."
                             }
                         }
                     }
@@ -1064,8 +1168,9 @@ class MainActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     blackjackMessage = "AI mengalami kendala: " + (e.message ?: e.javaClass.simpleName)
                     showBlackjackBubble("Ups, aku sempat tersendat. Kita tetap lanjut, ya! 😅")
-                    // If inference fails, restore a usable turn state instead of leaving the player
-                    // locked out. The user can tap Stand or Draw again.
+                    // Keep the round recoverable and remember whether Naya was mid-turn.
+                    // The in-game recovery button can reload the active model and retry safely.
+                    blackjackRecoveryNeedsBotTurn = blackjackRoundActive && !blackjackPlayerTurn
                     blackjackPlayerTurn = true
                     renderPage()
                 }
@@ -1080,13 +1185,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun buildBlackjackDecisionPrompt(): String = buildString {
         appendLine("MODE: PILIH LANGKAH GAME")
-        appendLine("Giliranmu. Kartu tanganmu (privat): " + blackjackDealerHand.joinToString(", ") { it.display })
-        appendLine("Nilai tanganmu: " + handValue(blackjackDealerHand))
+        appendLine("PESAN TERBARU INI ADALAH KEADAAN GAME SAAT INI. Gunakan data di bawah, bukan dugaan atau keadaan lama.")
+        appendLine("Giliran aktif: Naya. Kamu hanya boleh memilih satu dari dua aksi: HIT atau STAND.")
+        appendLine("Kartu tangan Naya (privat, jangan ungkapkan): " + blackjackDealerHand.joinToString(", ") { it.display })
+        appendLine("Total tangan Naya: " + handValue(blackjackDealerHand))
         appendLine("Kartu pengguna yang terlihat: " + blackjackPlayerHand.joinToString(", ") { it.display })
-        appendLine("Nilai pengguna: " + handValue(blackjackPlayerHand))
-        appendLine("Pilih HIT untuk mengambil tepat satu kartu atau STAND untuk berhenti. Target mendekati 21 tanpa melewati 21.")
-        appendLine("Kamu adalah Naya: tetap ceria dan suka bercanda dalam komentar, tetapi pilih aksi berdasarkan kartu sebenarnya.")
-        appendLine("Jawab tepat dua baris: ACTION: HIT atau ACTION: STAND; COMMENT: satu kalimat pendek.")
+        appendLine("Total pengguna: " + handValue(blackjackPlayerHand))
+        appendLine("ATURAN: HIT meminta tepat satu kartu. STAND mengakhiri giliran Naya. Target 21; jangan HIT jika total Naya sudah 21 atau lebih.")
+        appendLine("Jangan menulis kartu berikutnya, hasil ronde, atau skor akhir. Aplikasi akan memutuskan semuanya.")
+        appendLine("Tetap ceria sebagai Naya, tetapi format dan aksi harus benar.")
+        appendLine("OUTPUT PERSIS DUA BARIS, tanpa Markdown:")
+        appendLine("ACTION: HIT atau ACTION: STAND")
+        appendLine("COMMENT: satu kalimat pendek dalam bahasa Indonesia")
     }
 
     private fun requestBlackjackComment(prompt: String) {
@@ -1096,7 +1206,9 @@ class MainActivity : AppCompatActivity() {
             try {
                 val gamePrompt = prompt + "\nMODE: CHAT ONLY. Kamu adalah Naya, tetap ceria, jahil, dan alami. Balas pesan pengguna secara langsung. Jangan memilih langkah, jangan draw, jangan ubah skor atau ronde. Jawab tepat dua baris terpisah:\nACTION: WAIT\nCOMMENT: satu balasan singkat yang relevan dalam bahasa Indonesia."
                 val output = StringBuilder()
-                engine.sendUserPrompt(gamePrompt, predictLength = 80).collect { output.append(it) }
+                withTimeout(30_000L) {
+                    engine.sendUserPrompt(gamePrompt, predictLength = 80).collect { output.append(it) }
+                }
                 val result = output.toString()
                 val commentMatch = Regex("(?is)\\bCOMMENT\\s*:\\s*(.+)").find(result)
                 val comment = commentMatch?.groupValues?.get(1)
@@ -1128,6 +1240,9 @@ class MainActivity : AppCompatActivity() {
         if (message.isEmpty()) return
         if (!blackjackBotInvited) { toast("Mulai sesi Naya dulu."); return }
         if (blackjackBotBusy) { toast("Naya sedang berpikir. Tunggu sebentar, ya."); return }
+        blackjackChat.add(BlackjackChatMessage(true, message.take(220)))
+        while (blackjackChat.size > 40) blackjackChat.removeAt(0)
+        renderPage()
         requestBlackjackComment("Pesan dari pemain: \"" + message + "\". Balas langsung kepada pemain sebagai Naya dengan satu komentar singkat yang ceria dan jahil.")
     }
 
@@ -1180,6 +1295,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun finishBlackjackRound(message: String) {
         blackjackRoundActive = false; blackjackPlayerTurn = false; blackjackGameOver = true
+        blackjackRecoveryNeedsBotTurn = false
         blackjackMessage = message
     }
 
