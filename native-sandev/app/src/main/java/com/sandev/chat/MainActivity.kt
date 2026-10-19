@@ -1116,7 +1116,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
 
-                    // Last-resort game rule only: keep Gemma's own action/comment whenever valid,
+                    // Last-resort game rule only: keep the model's own action/comment whenever valid,
                     // but never let an empty or malformed model response freeze the round.
                     if (action == null) {
                         val total = withContext(Dispatchers.Main) { handValue(blackjackDealerHand) }
@@ -1750,7 +1750,12 @@ class MainActivity : AppCompatActivity() {
                 engine.loadModel(file.absolutePath)
                 engine.setSystemPrompt(systemPromptOverride ?: buildCharacterSystemPrompt(activeBot(), historyOverride ?: messages.toList()))
                 val tune = activeSamplingTune()
-                engine.setSamplingParams(tune.temperature, tune.topP, tune.topK, tune.repeatPenalty)
+                if (systemPromptOverride != null) {
+                    // Blackjack requires deterministic, parseable HIT/STAND output for both Gemma and Qwen.
+                    engine.setSamplingParams(0.25f, 0.90f, 32, 1.05f)
+                } else {
+                    engine.setSamplingParams(tune.temperature, tune.topP, tune.topK, tune.repeatPenalty)
+                }
                 withContext(Dispatchers.Main) {
                     activeModelName = file.name
                     prefs().edit().putString(KEY_ACTIVE_MODEL, file.name).apply()
