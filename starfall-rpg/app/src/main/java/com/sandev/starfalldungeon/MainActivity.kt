@@ -1439,7 +1439,7 @@ private class ForestGameView(context: Context) : View(context) {
             "PAUSE" -> when {
                 hit(52f,150f,370f,44f)->screen="GAME"
                 hit(52f,208f,180f,44f)->screen="CHARACTER"
-                hit(242f,208f,180f,44f)->screen="GEMMA"
+                hit(242f,208f,180f,44f)->{screen="GEMMA";(context as? MainActivity)?.showGemmaPanel()}
                 hit(52f,266f,180f,44f)->screen="INVENTORY"
                 hit(52f,324f,180f,44f)->screen="SKILLS"
                 hit(242f,324f,180f,44f)->{equipmentReturnScreen="PAUSE";screen="EQUIPMENT"}
