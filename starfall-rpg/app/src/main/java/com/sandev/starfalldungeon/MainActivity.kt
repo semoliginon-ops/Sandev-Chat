@@ -80,7 +80,7 @@ private class ForestGameView(context: Context) : View(context) {
     private var skillCooldown = 0f; private var moveX = 0f; private var moveY = 0f
     private var stickId = -1; private var command = "FOLLOW"
     private var message = "Hutan Sunyi: berburu untuk EXP dan gold"
-    private var messageTime = 5f; private var clock = 0f
+    private var messageTime = 5f; private var clock = 0f; private var screenShake = 0f
     private var bossSpawned = false; private var bossCleared = false
     private var screen = "MAIN"
     private var cityMessage = "Kota Asterfall: bicara dengan warga sebelum masuk hutan."
@@ -152,6 +152,7 @@ private class ForestGameView(context: Context) : View(context) {
 
     private fun update(dt: Float) {
         clock += dt
+        screenShake = (screenShake - dt).coerceAtLeast(0f)
         tickFootsteps(dt)
         hitFlash = max(0f, hitFlash-dt)
         effects.forEach { it.life -= dt }
@@ -264,7 +265,9 @@ private class ForestGameView(context: Context) : View(context) {
         paint.isFilterBitmap = false
     }
 
-    // Ninja Adventure CC0 sprite sheets are 4 columns x 7 rows of 16px frames.
+    // Supports both common 4x4 direction-row sheets and 4x7 animation-row sheets.
+    // Derive source frame dimensions from the real bitmap: never crop a 16px corner
+    // out of a 32px character, which was the reason the city sprites looked missing.
     private fun facingColumn(dx: Float, dy: Float): Int {
         if (kotlin.math.abs(dx) > kotlin.math.abs(dy)) return if (dx >= 0f) 3 else 2
         return if (dy >= 0f) 0 else 1
@@ -272,16 +275,26 @@ private class ForestGameView(context: Context) : View(context) {
 
     private fun drawAnimatedCharacter(c: Canvas, sheet: Bitmap?, cx: Float, feetY: Float,
                                       moving: Boolean, direction: Int, widthPx: Float, heightPx: Float) {
-        if (sheet == null || sheet.width < 64 || sheet.height < 112) return
-        val frameRow = if (moving) 1 + ((clock * 7f).toInt() % 3) else 0
-        val breathe = if (moving) 1f else 1f + kotlin.math.sin(clock * 3.2f) * 0.025f
+        if (sheet == null || sheet.width < 4 || sheet.height < 4) return
+        val frameW = sheet.width / 4
+        val rows = (sheet.height / frameW).coerceAtLeast(1)
+        val frameH = if (rows >= 7) sheet.height / 7 else sheet.height / 4
+        if (frameW <= 0 || frameH <= 0) return
+        val d = direction.coerceIn(0, 3)
+        val frame = if (moving) 1 + ((clock * 7f).toInt() % 3) else 0
+        val src = if (rows >= 7) {
+            android.graphics.Rect(d * frameW, (if (moving) frame else 0) * frameH,
+                (d + 1) * frameW, ((if (moving) frame else 0) + 1) * frameH)
+        } else {
+            android.graphics.Rect(frame * frameW, d * frameH,
+                (frame + 1) * frameW, (d + 1) * frameH)
+        }
+        if (src.right > sheet.width || src.bottom > sheet.height) return
+        val breathe = if (moving) 1f else 1f + kotlin.math.sin(clock * 3.2f) * 0.018f
         val dstH = heightPx * breathe
         val dst = RectF(cx - widthPx / 2f, feetY - dstH, cx + widthPx / 2f, feetY)
         paint.shader = null; paint.alpha = 255; paint.isFilterBitmap = false
-        c.drawBitmap(sheet,
-            android.graphics.Rect(direction.coerceIn(0, 3) * 16, frameRow * 16,
-                                  direction.coerceIn(0, 3) * 16 + 16, frameRow * 16 + 16),
-            dst, paint)
+        c.drawBitmap(sheet, src, dst, paint)
         paint.isFilterBitmap = false; paint.alpha = 255
     }
 
@@ -296,7 +309,11 @@ private class ForestGameView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         canvas.save(); canvas.scale(width / 960f, height / 540f)
-        if (screen == "GAME") { update(0.016f); drawForest(canvas); drawCharacters(canvas); drawEffects(canvas); drawHud(canvas) } else if (screen == "CITY") { updateCity(0.016f); drawCity(canvas) } else drawMenu(canvas)
+        if (screen == "GAME") {
+            update(0.016f)
+            if (screenShake > 0f) canvas.translate((kotlin.math.sin(clock*95f)*screenShake*20f), (kotlin.math.cos(clock*81f)*screenShake*10f))
+            drawForest(canvas); drawCharacters(canvas); drawEffects(canvas); drawHud(canvas)
+        } else if (screen == "CITY") { updateCity(0.016f); drawCity(canvas) } else drawMenu(canvas)
         canvas.restore(); postInvalidateDelayed(16L)
     }
     private fun drawForest(c: Canvas) {
@@ -304,9 +321,17 @@ private class ForestGameView(context: Context) : View(context) {
         paint.shader=LinearGradient(0f,0f,960f,540f,Color.rgb(28,65,48),Color.rgb(11,31,34),Shader.TileMode.CLAMP); c.drawRect(0f,0f,960f,540f,paint); paint.shader=null
         for (tx in 0..59) for (ty in 0..32) {
             val xx = tx * 16f; val yy = ty * 16f
-            paint.color = if ((tx * 7 + ty * 13) % 5 == 0) Color.rgb(34,72,48) else Color.rgb(29,61,42)
+            val tone = (tx * 17 + ty * 31 + tx * ty * 3) % 9
+            paint.color = when (tone) {
+                0 -> Color.rgb(31, 66, 43)
+                1, 2 -> Color.rgb(28, 59, 40)
+                3 -> Color.rgb(32, 63, 42)
+                else -> Color.rgb(29, 61, 42)
+            }
             c.drawRect(xx, yy, xx + 16f, yy + 16f, paint)
-            if ((tx * 3 + ty * 11) % 17 == 0) { paint.color = Color.rgb(63,98,55); c.drawRect(xx+5,yy+7,xx+8,yy+10,paint) }
+            // Sparse 2-3px grass flecks and tiny soil pixels, not a repeated checker pattern.
+            if ((tx * 3 + ty * 11) % 19 == 0) { paint.color = Color.rgb(62, 100, 57); c.drawRect(xx+4,yy+5,xx+7,yy+7,paint) }
+            if ((tx * 13 + ty * 5) % 37 == 0) { paint.color = Color.rgb(48, 78, 48); c.drawRect(xx+10,yy+11,xx+13,yy+13,paint) }
         }
         if (rpgSheet != null) {
             for (gx in 0..14) for (gy in 0..7) {
@@ -367,14 +392,69 @@ private class ForestGameView(context: Context) : View(context) {
 
     private fun drawEffects(c: Canvas) {
         effects.forEach { e ->
-            val p=(1f-e.life/(if(e.kind==1)0.52f else if(e.kind==4)0.55f else 0.32f)).coerceIn(0f,1f)
-            when(e.kind){
-                1 -> { val px=e.x+(e.tx-e.x)*p; val py=e.y+(e.ty-e.y)*p; paint.color=Color.rgb(150,104,255);c.drawCircle(px,py,7f*(1f-p)+2f,paint);text(c,"✨",px-8,py+5,18f,Color.WHITE) }
-                2 -> { paint.color=Color.argb((220*(1f-p)).toInt(),255,222,107);c.drawLine(e.x,e.y-14,e.x+18f*(1f-p),e.y+8f*(1f-p),paint);c.drawLine(e.x,e.y+10,e.x-17f*(1f-p),e.y-7f,paint);paint.strokeWidth=4f;c.drawCircle(e.tx,e.ty,9f+16f*p,paint);paint.strokeWidth=1f }
-                3 -> { paint.color=Color.argb((190*(1f-p)).toInt(),255,65,65);paint.strokeWidth=4f;c.drawCircle(e.x,e.y,12f+30f*p,paint);paint.strokeWidth=1f }
-                4 -> { paint.color=Color.argb((150*(1f-p)).toInt(),255,222,126);c.drawCircle(e.x,e.y-12f*p,12f+15f*p,paint);text(c,"💥",e.x-12,e.y-8,20f,Color.WHITE) }
-                5 -> { paint.color=Color.argb((200*(1f-p)).toInt(),96,223,255);paint.strokeWidth=4f;c.drawCircle(e.x,e.y,22f+58f*p,paint);paint.strokeWidth=1f;text(c,"⚔️",e.x-12,e.y+6,24f,Color.WHITE) }
+            val duration = if (e.kind == 1) 0.52f else if (e.kind == 4 || e.kind == 5) 0.55f else 0.32f
+            val p = (1f - e.life / duration).coerceIn(0f, 1f)
+            val alpha = (230f * (1f - p)).toInt().coerceIn(0, 230)
+            when (e.kind) {
+                1 -> { // compact magic bolt
+                    val px=e.x+(e.tx-e.x)*p; val py=e.y+(e.ty-e.y)*p
+                    paint.color=Color.argb(alpha,117,174,255); c.drawRect(px-3f,py-3f,px+4f,py+4f,paint)
+                    paint.color=Color.argb(alpha,225,242,255); c.drawRect(px-1f,py-7f,px+2f,py+7f,paint)
+                }
+                2 -> { // two crisp impact sparks
+                    paint.color=Color.argb(alpha,255,226,132); paint.strokeWidth=2.5f
+                    c.drawLine(e.x-8f,e.y-9f,e.x-2f,e.y-2f,paint); c.drawLine(e.x+8f,e.y-8f,e.x+2f,e.y-2f,paint)
+                    c.drawLine(e.x-7f,e.y+7f,e.x-1f,e.y+1f,paint); c.drawLine(e.x+7f,e.y+7f,e.x+1f,e.y+1f,paint)
+                    paint.strokeWidth=1f
+                }
+                3 -> { // short red hit ring
+                    paint.color=Color.argb(alpha,232,91,77); paint.style=Paint.Style.STROKE; paint.strokeWidth=2f
+                    c.drawRect(e.x-8f-8f*p,e.y-7f-8f*p,e.x+8f+8f*p,e.y+7f+8f*p,paint)
+                    paint.style=Paint.Style.FILL; paint.strokeWidth=1f
+                }
+                4 -> { // small gold impact star, drawn as four lines
+                    paint.color=Color.argb(alpha,255,218,111); paint.strokeWidth=2f
+                    val r=5f+7f*p
+                    c.drawLine(e.x-r,e.y,e.x+r,e.y,paint); c.drawLine(e.x,e.y-r,e.x,e.y+r,paint)
+                    c.drawLine(e.x-r*.65f,e.y-r*.65f,e.x+r*.65f,e.y+r*.65f,paint)
+                    c.drawLine(e.x-r*.65f,e.y+r*.65f,e.x+r*.65f,e.y-r*.65f,paint)
+                    paint.strokeWidth=1f
+                }
+                5 -> { // readable pixel slash with a short cyan glint
+                    paint.color=Color.argb(alpha,56,208,240); paint.strokeWidth=7f
+                    c.drawLine(e.x-29f+20f*p,e.y+23f,e.x+25f-20f*p,e.y-27f,paint)
+                    paint.color=Color.argb(alpha,222,250,255); paint.strokeWidth=2.5f
+                    c.drawLine(e.x-25f+20f*p,e.y+19f,e.x+21f-20f*p,e.y-23f,paint)
+                    paint.color=Color.argb(alpha,255,255,220)
+                    c.drawRect(e.x-3f,e.y-5f,e.x+3f,e.y+1f,paint)
+                    paint.strokeWidth=1f
+                }
             }
+        }
+    }
+
+    private fun drawPixelIcon(c: Canvas, kind: String, cx: Float, cy: Float, color: Int) {
+        paint.color = color
+        when (kind) {
+            "attack" -> {
+                paint.strokeWidth=3f
+                c.drawLine(cx-7f,cy+7f,cx+6f,cy-6f,paint)
+                c.drawLine(cx+1f,cy-7f,cx+8f,cy-8f,paint); c.drawLine(cx+6f,cy-1f,cx+8f,cy-8f,paint)
+                c.drawLine(cx-9f,cy+9f,cx-4f,cy+8f,paint); paint.strokeWidth=1f
+            }
+            "dodge" -> {
+                c.drawRect(cx-9f,cy-2f,cx+4f,cy+2f,paint)
+                c.drawRect(cx+1f,cy-6f,cx+5f,cy+6f,paint)
+                c.drawRect(cx+6f,cy-4f,cx+9f,cy+4f,paint)
+            }
+            "skill" -> {
+                c.drawRect(cx-2f,cy-10f,cx+2f,cy+10f,paint)
+                c.drawRect(cx-9f,cy-2f,cx+9f,cy+2f,paint)
+                c.drawRect(cx-6f,cy-6f,cx+6f,cy+6f,paint)
+            }
+            "follow" -> { c.drawRect(cx-7f,cy-6f,cx+7f,cy+6f,paint); c.drawRect(cx-2f,cy-10f,cx+2f,cy+10f,paint) }
+            "guard" -> { c.drawRect(cx-7f,cy-8f,cx+7f,cy-5f,paint); c.drawRect(cx-5f,cy-5f,cx+5f,cy+5f,paint); c.drawRect(cx-2f,cy+5f,cx+2f,cy+9f,paint) }
+            "range" -> { c.drawCircle(cx,cy,7f,paint); paint.color=Color.rgb(20,34,30); c.drawCircle(cx,cy,3f,paint) }
         }
     }
 
@@ -388,24 +468,49 @@ private class ForestGameView(context: Context) : View(context) {
         text(c,"KILLS $kills",244f,69f,11f,Color.rgb(218,225,196))
         text(c,"DODGE " + if (dodgeCooldown <= 0f) "READY" else "${dodgeCooldown.toInt()+1}",244f,84f,10f)
         listOf("FOLLOW","ATTACK","GUARD","RANGE").forEachIndexed { i,cmd ->
-            val bx=554f+i*96f; paint.color=if(command==cmd) Color.rgb(112,79,151) else Color.argb(220,20,34,34)
-            c.drawRoundRect(RectF(bx,14f,bx+88f,46f),6f,6f,paint);text(c,cmd,bx+12f,34f,11f)
+            val bx=554f+i*96f
+            paint.color=Color.argb(90,0,0,0); c.drawRect(bx+2f,16f,bx+90f,48f,paint)
+            paint.color=if(command==cmd) Color.rgb(75,74,116) else Color.rgb(34,52,47)
+            c.drawRect(bx,12f,bx+88f,44f,paint)
+            paint.color=if(command==cmd) Color.rgb(165,151,218) else Color.rgb(103,137,103)
+            c.drawRect(bx+2f,14f,bx+86f,16f,paint)
+            paint.color=Color.rgb(211,190,139); paint.style=Paint.Style.STROKE; c.drawRect(bx+0.5f,12.5f,bx+87.5f,43.5f,paint); paint.style=Paint.Style.FILL
+            val iconKind=when(cmd){"FOLLOW"->"follow";"ATTACK"->"attack";"GUARD"->"guard";else->"range"}
+            drawPixelIcon(c,iconKind,bx+16f,28f,Color.rgb(245,221,158))
+            text(c,cmd,bx+29f,33f,10f,Color.rgb(248,241,216))
         }
         if(messageTime>0f){paint.color=Color.argb(225,12,20,23);c.drawRoundRect(RectF(270f,470f,690f,510f),7f,7f,paint);text(c,message.take(54),284f,495f,12f,Color.rgb(255,235,189))}
         paint.color=Color.argb(135,190,210,190);c.drawCircle(88f,445f,51f,paint)
         paint.color=Color.argb(190,49,90,75);c.drawCircle(88f+moveX*20f,445f+moveY*20f,21f,paint);text(c,"MOVE",65f,510f,10f)
-        paint.color=Color.argb(225,135,69,68);c.drawCircle(780f,449f,35f,paint);text(c,"DODGE",752f,454f,10f)
-        paint.color=Color.argb(225,103,69,159);c.drawCircle(872f,449f,35f,paint);text(c,"✨",858f,444f,22f);text(c,"SKILL",852f,469f,10f)
+        // Compact, crisp skill panels: same hit areas as the existing controls.
+        paint.color=Color.argb(110,0,0,0); c.drawRect(739f,416f,823f,486f,paint)
+        paint.color=Color.rgb(91,49,46); c.drawRect(736f,413f,820f,480f,paint)
+        paint.color=Color.rgb(167,88,72); c.drawRect(738f,415f,818f,417f,paint)
+        paint.color=Color.rgb(225,179,127); paint.style=Paint.Style.STROKE; c.drawRect(736.5f,413.5f,819.5f,479.5f,paint); paint.style=Paint.Style.FILL
+        drawPixelIcon(c,"dodge",778f,440f,Color.rgb(255,224,168)); text(c,"DODGE",754f,468f,10f,Color.rgb(255,242,218))
+        paint.color=Color.argb(110,0,0,0); c.drawRect(829f,416f,915f,486f,paint)
+        paint.color=Color.rgb(58,48,91); c.drawRect(826f,413f,912f,480f,paint)
+        paint.color=Color.rgb(113,91,171); c.drawRect(828f,415f,910f,417f,paint)
+        paint.color=Color.rgb(190,171,224); paint.style=Paint.Style.STROKE; c.drawRect(826.5f,413.5f,911.5f,479.5f,paint); paint.style=Paint.Style.FILL
+        drawPixelIcon(c,"skill",869f,440f,Color.rgb(198,230,255)); text(c,"ARC SLASH",840f,468f,9f,Color.rgb(246,239,255))
         if(skillCooldown>0f) text(c,"${skillCooldown.toInt()+1}s",861f,422f,10f,Color.YELLOW)
         paint.color=Color.argb(225,18,30,34); c.drawRoundRect(RectF(884f,55f,948f,85f),6f,6f,paint); text(c,"MENU",895f,75f,11f,Color.rgb(255,230,172))
     }
 
     private fun menuButton(c: Canvas, label: String, bx: Float, by: Float, bw: Float, bh: Float, active: Boolean = false) {
-        paint.color=if(active) Color.rgb(89,83,132) else Color.rgb(38,65,56)
-        c.drawRoundRect(RectF(bx,by,bx+bw,by+bh),7f,7f,paint)
-        paint.color=Color.rgb(223,207,161); paint.style=Paint.Style.STROKE
-        c.drawRoundRect(RectF(bx,by,bx+bw,by+bh),7f,7f,paint); paint.style=Paint.Style.FILL
-        text(c,label,bx+12f,by+bh*0.62f,if(label.length>24) 11f else 14f,Color.WHITE)
+        paint.shader = null
+        paint.color = Color.argb(90, 0, 0, 0)
+        c.drawRect(bx + 2f, by + 3f, bx + bw + 2f, by + bh + 3f, paint)
+        paint.color = if (active) Color.rgb(81, 78, 128) else Color.rgb(39, 66, 55)
+        c.drawRect(bx, by, bx + bw, by + bh, paint)
+        paint.color = if (active) Color.rgb(143, 135, 193) else Color.rgb(103, 143, 105)
+        c.drawRect(bx + 2f, by + 2f, bx + bw - 2f, by + 4f, paint)
+        paint.color = Color.rgb(20, 34, 30)
+        c.drawRect(bx, by + bh - 3f, bx + bw, by + bh, paint)
+        paint.color = Color.rgb(220, 199, 145); paint.style = Paint.Style.STROKE; paint.strokeWidth = 1f
+        c.drawRect(bx + 0.5f, by + 0.5f, bx + bw - 0.5f, by + bh - 0.5f, paint)
+        paint.style = Paint.Style.FILL; paint.strokeWidth = 1f
+        text(c, label, bx + 12f, by + bh * 0.62f, if (label.length > 24) 11f else 14f, Color.rgb(248, 241, 216))
     }
 
     private fun cityBlocked(ax: Float, ay: Float): Boolean {
@@ -485,15 +590,32 @@ private class ForestGameView(context: Context) : View(context) {
         paint.color=Color.argb(60,96,181,255); c.drawCircle(860f,363f,61f,paint); paint.color=Color.argb(100,95,178,255); paint.style=Paint.Style.STROKE; paint.strokeWidth=7f; c.drawOval(RectF(827f,309f,893f,401f),paint); paint.strokeWidth=3f; paint.color=Color.rgb(169,223,255); c.drawOval(RectF(835f,317f,885f,393f),paint); paint.style=Paint.Style.FILL
         paint.shader=RadialGradient(860f,354f,42f,intArrayOf(Color.rgb(117,226,255),Color.rgb(66,103,191),Color.rgb(19,38,67)),null,Shader.TileMode.CLAMP); c.drawOval(RectF(839f,320f,881f,390f),paint); paint.shader=null
         for(i in 0..7){val a=clock*0.6f+i*0.785f;paint.color=Color.rgb(196,239,255);c.drawCircle(860f+kotlin.math.cos(a)*39f,355f+kotlin.math.sin(a)*49f,2.5f,paint)}
-        // Villagers use the same cohesive animated pixel-art sheets.
+        // Decorative villagers stay separate from the controllable hero/companion.
         drawAnimatedCharacter(c,gemmaSheet,236f,378f,true,facingColumn(kotlin.math.sin(clock),1f),37f,43f)
         drawAnimatedCharacter(c,heroSheet,462f,390f,true,facingColumn(kotlin.math.cos(clock),1f),37f,43f)
-        paint.color=Color.argb(80,0,0,0); c.drawOval(RectF(gemmaX-18,gemmaY+4,gemmaX+19,gemmaY+15),paint)
-        drawAnimatedCharacter(c,gemmaSheet,gemmaX,gemmaY+5f,dist(gemmaX,gemmaY,x,y)>54f,facingColumn(x-gemmaX,y-gemmaY),43f,48f)
-        paint.color=Color.argb(80,0,0,0); c.drawOval(RectF(x-17,y+6,x+18,y+17),paint)
-        val moving=kotlin.math.abs(moveX)+kotlin.math.abs(moveY)>0.08f
-        drawAnimatedCharacter(c,heroSheet,x,y+5f,moving,if(moving)facingColumn(moveX,moveY) else 0,47f,51f)
-        text(c,playerName.ifBlank{"HERO"}.take(12),x-24,y-51,10f,Color.rgb(255,238,185)); text(c,"GEMMA",gemmaX-23,gemmaY-49,9f,Color.rgb(255,224,255))
+        // Keep the player's party in the clear lower plaza, above the map and below the title panel.
+        val heroFeetY = y.coerceIn(140f, 438f)
+        val gemmaFeetY = gemmaY.coerceIn(140f, 438f)
+        paint.color=Color.argb(105,0,0,0); c.drawOval(RectF(gemmaX-21,gemmaFeetY-2f,gemmaX+21,gemmaFeetY+7f),paint)
+        drawAnimatedCharacter(c,gemmaSheet,gemmaX,gemmaFeetY,dist(gemmaX,gemmaY,x,y)>54f,facingColumn(x-gemmaX,y-gemmaY),46f,52f)
+        if (gemmaSheet == null) {
+            paint.color=Color.rgb(46,57,91); c.drawRect(gemmaX-10f,gemmaFeetY-34f,gemmaX+10f,gemmaFeetY-8f,paint)
+            paint.color=Color.rgb(235,193,153); c.drawRect(gemmaX-7f,gemmaFeetY-47f,gemmaX+7f,gemmaFeetY-33f,paint)
+            paint.color=Color.rgb(111,177,224); c.drawRect(gemmaX-14f,gemmaFeetY-31f,gemmaX+14f,gemmaFeetY-13f,paint)
+        }
+        paint.color=Color.argb(105,0,0,0); c.drawOval(RectF(x-21,heroFeetY-2f,x+21,heroFeetY+7f),paint)
+        val heroMoving=kotlin.math.abs(moveX)+kotlin.math.abs(moveY)>0.08f
+        drawAnimatedCharacter(c,heroSheet,x,heroFeetY,heroMoving,if(heroMoving)facingColumn(moveX,moveY) else 0,50f,56f)
+        if (heroSheet == null) {
+            paint.color=Color.rgb(61,78,89); c.drawRect(x-11f,heroFeetY-37f,x+11f,heroFeetY-9f,paint)
+            paint.color=Color.rgb(230,188,146); c.drawRect(x-8f,heroFeetY-50f,x+8f,heroFeetY-36f,paint)
+            paint.color=Color.rgb(154,113,71); c.drawRect(x-15f,heroFeetY-34f,x+15f,heroFeetY-13f,paint)
+        }
+        // Nameplates have a dark pixel backing so the party remains readable on grass and stone.
+        paint.color=Color.argb(210,17,26,24); c.drawRect(x-34f,heroFeetY-70f,x+34f,heroFeetY-55f,paint)
+        text(c,playerName.ifBlank{"HERO"}.take(12),x-28f,heroFeetY-59f,9f,Color.rgb(255,238,185))
+        paint.color=Color.argb(210,17,26,24); c.drawRect(gemmaX-31f,gemmaFeetY-66f,gemmaX+31f,gemmaFeetY-52f,paint)
+        text(c,"GEMMA",gemmaX-23f,gemmaFeetY-55f,9f,Color.rgb(255,224,255))
         paint.color=Color.argb(218,12,23,25);c.drawRoundRect(RectF(18f,16f,465f,82f),9f,9f,paint); text(c,"KOTA ASTERFALL",34f,43f,20f,Color.rgb(255,222,153)); text(c,cityMessage.take(52),34f,65f,11f,Color.WHITE)
         paint.color=Color.argb(125,190,210,190);c.drawCircle(88f,445f,49f,paint); paint.color=Color.argb(200,49,90,75);c.drawCircle(88f+moveX*19f,445f+moveY*19f,20f,paint); text(c,"GERAK",60f,510f,10f)
         menuButton(c,"WARGA",30f,420f,150f,42f); menuButton(c,"TOKO",190f,420f,150f,42f); menuButton(c,"PANDAI BESI",350f,420f,180f,42f)
@@ -649,7 +771,7 @@ private class ForestGameView(context: Context) : View(context) {
                     dodgeTime=0.22f;dodgeCooldown=3f;invuln=0.28f;say("Dodge!",0.7f)
                 } else if(tx>825f && ty>390f && skillCooldown<=0f){
                     skillCooldown=6f
-                    fx(x,y,x,y,5,0.45f);sfx("spell", ToneGenerator.TONE_PROP_BEEP)
+                    fx(x,y,x,y,5,0.45f);screenShake=max(screenShake,0.10f);sfx("spell", ToneGenerator.TONE_PROP_BEEP)
                     val skillDamage = 42f + (skillLevel-1)*18f + weaponLevel*5f
                     mobs.filter{it.alive && dist(it.x,it.y,x,y)<105f}.toList().forEach{it.hp-=skillDamage;if(it.hp<=0f)defeat(it)}
                     say("ARC SLASH Lv."+skillLevel+"!",1f)
