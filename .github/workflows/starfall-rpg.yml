@@ -32,23 +32,27 @@ jobs:
           mkdir -p starfall-rpg/app/src/main/assets/areas
           for area in forest rawa pantai pegunungan salju gurun vulkanik; do
             mkdir -p "starfall-rpg/app/src/main/assets/areas/$area"
-            find "asset starfall rpg/$area" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) -exec cp {} "starfall-rpg/app/src/main/assets/areas/$area/" \;
+            if [ -d "asset starfall rpg/$area" ]; then
+              find "asset starfall rpg/$area" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) -exec cp {} "starfall-rpg/app/src/main/assets/areas/$area/" \;
+            else
+              echo "No uploaded asset folder for $area; skipping."
+            fi
           done
       - name: Fetch extra CC0 shooter and impact sound variants
         run: |
           mkdir -p starfall-rpg/app/src/main/assets/audio/extra
           base="https://raw.githubusercontent.com/Mcamento8/open-game-sfx-index/main/audio"
           for file in laserSmall_000 laserSmall_001 laserSmall_002 laserSmall_003 laserSmall_004 laserRetro_000 laserRetro_001 laserRetro_002 laserRetro_003 laserRetro_004 laserLarge_000 laserLarge_001 laserLarge_002 explosionCrunch_000 explosionCrunch_001 explosionCrunch_002; do
-            curl -fL --retry 3 "$base/sci-fi-sounds/$file.ogg" -o "starfall-rpg/app/src/main/assets/audio/extra/$file.ogg"
+            curl -fL --retry 2 "$base/sci-fi-sounds/$file.ogg" -o "starfall-rpg/app/src/main/assets/audio/extra/$file.ogg" || echo "Optional sound unavailable: $file"
           done
           for file in impactGeneric_light_000 impactGeneric_light_001 impactGeneric_light_002; do
-            curl -fL --retry 3 "$base/impact-sounds/$file.ogg" -o "starfall-rpg/app/src/main/assets/audio/extra/$file.ogg"
+            curl -fL --retry 2 "$base/impact-sounds/$file.ogg" -o "starfall-rpg/app/src/main/assets/audio/extra/$file.ogg" || echo "Optional sound unavailable: $file"
           done
           for file in impactMetal_000 impactMetal_001; do
             curl -fL --retry 3 "$base/sci-fi-sounds/$file.ogg" -o "starfall-rpg/app/src/main/assets/audio/extra/$file.ogg"
           done
           for file in footstep00 footstep01 footstep02 footstep03 footstep04; do
-            curl -fL --retry 3 "https://raw.githubusercontent.com/Mcamento8/open-game-sfx-index/main/audio/rpg-audio/$file.ogg" -o "starfall-rpg/app/src/main/assets/audio/extra/$file.ogg"
+            curl -fL --retry 2 "https://raw.githubusercontent.com/Mcamento8/open-game-sfx-index/main/audio/rpg-audio/$file.ogg" -o "starfall-rpg/app/src/main/assets/audio/extra/$file.ogg" || echo "Optional sound unavailable: $file"
           done
       - name: Build STARFALL RPG debug APK
         working-directory: starfall-rpg
