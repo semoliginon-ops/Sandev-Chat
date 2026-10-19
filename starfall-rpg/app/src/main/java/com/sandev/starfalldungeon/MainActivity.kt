@@ -88,6 +88,7 @@ private class ForestGameView(context: Context) : View(context) {
     private var messageTime = 5f; private var clock = 0f; private var screenShake = 0f
     private var bossSpawned = false; private var bossCleared = false
     private var screen = "MAIN"
+    private var equipmentReturnScreen = "MAIN"
     private var cityMessage = "Kota Asterfall: bicara dengan warga sebelum masuk hutan."
     private var playerName = prefs.getString("player_name", "").orEmpty()
     private var hero = prefs.getString("hero", "Vanguard").orEmpty()
@@ -993,20 +994,20 @@ private class ForestGameView(context: Context) : View(context) {
                 hit(52f,270f,185f,44f) -> screen="CHARACTER"
                 hit(252f,270f,190f,44f) -> screen="INVENTORY"
                 hit(52f,326f,185f,44f) -> screen="SKILLS"
-                hit(252f,326f,190f,44f) -> screen="EQUIPMENT"
+                hit(252f,326f,190f,44f) -> {equipmentReturnScreen="MAIN";screen="EQUIPMENT"}
                 hit(52f,382f,185f,44f) -> screen="QUESTS"
                 hit(252f,382f,190f,44f) -> screen="SETTINGS"
                 hit(510f,326f,340f,52f) -> {screen="CITY";x=470f;y=370f;gemmaX=425f;gemmaY=395f;moveX=0f;moveY=0f;cityMessage="Asterfall City: zona aman.";say(cityMessage,2.5f);sfx("door",ToneGenerator.TONE_PROP_ACK)}
             }
             "CITY" -> when {
                 hit(530f,472f,88f,46f) -> {screen="SHOP";moveX=0f;moveY=0f;say("Pedagang Asterfall siap melayani.",2f)}
-                hit(623f,472f,100f,46f) -> {screen="EQUIPMENT";moveX=0f;moveY=0f;say("Pandai besi: pilih upgrade perlengkapanmu.",2f)}
+                hit(623f,472f,100f,46f) -> {equipmentReturnScreen="CITY";screen="EQUIPMENT";moveX=0f;moveY=0f;say("Pandai besi: pilih upgrade perlengkapanmu.",2f)}
                 hit(728f,472f,88f,46f) -> {screen="GAME";x=470f;y=370f;gemmaX=425f;gemmaY=395f;moveX=0f;moveY=0f;say("Keluar dari kota! Monster menyerang dari sisi arena.",3f);sfx("door",ToneGenerator.TONE_PROP_ACK)}
                 hit(821f,472f,95f,46f) -> {screen="MAIN";moveX=0f;moveY=0f}
                 hit(195f,325f,105f,95f) -> say("Penjaga kota: jalanan aman, tetapi ancaman monster datang dari luar tembok.",3f)
                 hit(405f,325f,105f,95f) -> say("Tabib: simpan ramuan untuk saat HP-mu menipis.",3f)
                 hit(665f,325f,105f,95f) -> {screen="SHOP";moveX=0f;moveY=0f}
-                hit(805f,305f,90f,105f) -> {screen="EQUIPMENT";moveX=0f;moveY=0f}
+                hit(805f,305f,90f,105f) -> {equipmentReturnScreen="CITY";screen="EQUIPMENT";moveX=0f;moveY=0f}
             }
             "CREATE" -> when {
                 hit(52f,145f,370f,46f) -> showNameDialog()
@@ -1032,8 +1033,8 @@ private class ForestGameView(context: Context) : View(context) {
             }
             "EQUIPMENT" -> when {
                 hit(52f,183f,370f,44f) -> {val cost=(weaponLevel+1)*55;if(weaponLevel<5&&gold>=cost){gold-=cost;weaponLevel++;save();say("Senjata ditingkatkan.")}else say("Gold kurang atau level maksimum.")}
-                hit(52f,281f,370f,44f) -> {val cost=(armorLevel+1)*50;if(armorLevel<5&&gold>=cost){gold-=cost;armorLevel++;save();say("Armor ditingkatkan.")}else say("Gold kurang atau level maksimum.")}
-                hit(52f,382f,190f,44f) -> screen="PAUSE"
+                hit(52f,281f,370f,44f) -> {val cost=(armorLevel+1)*50;if(armorLevel<5&&gold>=gold && gold>=cost){gold-=cost;armorLevel++;save();say("Armor ditingkatkan.")}else say("Gold kurang atau level maksimum.")}
+                hit(52f,382f,190f,44f) -> {screen=equipmentReturnScreen;moveX=0f;moveY=0f}
             }
             "QUESTS" -> if(hit(52f,382f,190f,44f))screen="PAUSE"
             "SETTINGS" -> if(hit(52f,280f,320f,46f))screen="MAIN"
@@ -1042,7 +1043,7 @@ private class ForestGameView(context: Context) : View(context) {
                 hit(52f,208f,180f,44f)->screen="CHARACTER"
                 hit(242f,208f,180f,44f)->screen="INVENTORY"
                 hit(52f,266f,180f,44f)->screen="SKILLS"
-                hit(242f,266f,180f,44f)->screen="EQUIPMENT"
+                hit(242f,266f,180f,44f)->{equipmentReturnScreen="PAUSE";screen="EQUIPMENT"}
                 hit(52f,324f,370f,44f)->screen="MAIN"
             }
         }
