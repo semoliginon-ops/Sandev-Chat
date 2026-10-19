@@ -6,7 +6,6 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import com.arm.aichat.AiChat
 import com.arm.aichat.InferenceEngine
-import com.arm.aichat.gguf.GgufMetadataReader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -75,7 +74,23 @@ internal class GemmaLocalAi(
             var target: File? = null
             try {
                 context.contentResolver.openInputStream(uri)?.use { input ->
-                    GgufMetadataReader.create().readStructuredMetadata(input)
+                    // Match Sandev Chat's known-good loader: validate the GGUF magic only.
+                    // The Java metadata reader has its own architecture allowlist and can
+                    // reject newer model families before llama.cpp gets a chance to load them.
+                    val header = ByteArray(4)
+                    var read = 0
+                    while (read < header.size) {
+                        val count = input.read(header, read, header.size - read)
+                        if (count < 0) break
+                        read += count
+                    }
+                    require(
+                        read == 4 &&
+                            header[0] == 'G'.code.toByte() &&
+                            header[1] == 'G'.code.toByte() &&
+                            header[2] == 'U'.code.toByte() &&
+                            header[3] == 'F'.code.toByte()
+                    ) { "File tidak memiliki header GGUF yang valid." }
                 } ?: error("File tidak dapat dibaca sebagai GGUF.")
                 val display = displayName(context.contentResolver, uri) ?: "gemma-local.gguf"
                 val safe = display.replace(Regex("[^a-zA-Z0-9._() -]"), "_").trim().ifBlank { "gemma-local.gguf" }
