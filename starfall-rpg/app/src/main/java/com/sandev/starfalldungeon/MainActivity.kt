@@ -270,7 +270,7 @@ private class ForestGameView(context: Context) : View(context) {
             }
         }
         if (hp <= 0f || gemmaHp <= 0f) {
-            x = 470f; y = 285f; hp = maxHp; gemmaHp = gemmaMaxHp
+            x = 470f; y = 370f; gemmaX = 425f; gemmaY = 395f; hp = maxHp; gemmaHp = gemmaMaxHp
             mobs.filter { it.alive && it.kind != 2 }.forEach { it.x = (it.x + 180f).coerceIn(55f, 900f) }
             say("Mundur ke tempat aman. Gold dan EXP tetap utuh.", 4f)
         }
