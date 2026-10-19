@@ -42,7 +42,8 @@ class MainActivity : Activity() {
 
 private data class Mob(
     var x: Float, var y: Float, val kind: Int, var hp: Float, val maxHp: Float,
-    var attack: Float = 1f, var windup: Float = 0f, var alive: Boolean = true
+    var attack: Float = 1f, var windup: Float = 0f, var alive: Boolean = true,
+    var hitEmoji: String = "", var hitEmojiTime: Float = 0f
 )
 
 private class ForestGameView(context: Context) : View(context) {
@@ -84,6 +85,9 @@ private class ForestGameView(context: Context) : View(context) {
     private var kills = prefs.getInt("kills", 0).coerceAtLeast(0)
     private var damage = 14f + (level - 1) * 2f
     private var attackTimer = 0f; private var gemmaTimer = 0f
+    private var gemmaChat = "Ayo, kita pasti bisa! 💖"
+    private var gemmaChatTime = 3.5f
+    private var gemmaChatTimer = 11f
     private var dodgeCooldown = 0f; private var dodgeTime = 0f; private var invuln = 0f
     private var skillCooldown = 0f; private var moveX = 0f; private var moveY = 0f
     private var stickId = -1; private var command = "FOLLOW"
@@ -177,6 +181,17 @@ private class ForestGameView(context: Context) : View(context) {
     }
     private fun need(l: Int): Int = (100 + l * l * 18).coerceAtMost(65000)
     private fun say(s: String, t: Float = 2f) { message = s; messageTime = t }
+    private fun gemmaTalk(s: String, t: Float = 3.2f) { gemmaChat = s; gemmaChatTime = t }
+    private fun gemmaRandomTalk() { val lines = listOf("Gaskeun! Kita kompak! 💖", "Hehe, monster itu pede banget! 😂", "Jangan lupa dodge, kapten! ✨", "Aku jagain dari sini! 🌟", "Waduh, mukanya serem... dikit! 😳", "Serang terus! Kamu hebat! 💪", "Tim kita nggak gampang tumbang! 💜", "Monster: kok aku lagi? WKWK! 🤣", "Fokus, fokus... habis ini istirahat! 😆", "Aku kasih dukungan magis! ✨"); gemmaTalk(lines.random(random)) }
+    private fun performPlayerAttack() {
+        if (attackTimer > 0f) { say("Serangan masih cooldown sebentar!", 0.7f); return }
+        val target = mobs.filter { it.alive && dist(it.x, it.y, x, y) < 125f }.minByOrNull { dist(it.x, it.y, x, y) }
+        if (target == null) { say("Dekati monster dulu untuk menyerang.", 1f); return }
+        target.hp -= damage + weaponLevel * 5f; target.hitEmoji = "💥"; target.hitEmojiTime = 0.75f
+        attackTimer = 0.48f; fx(x, y, target.x, target.y, 2); fx(target.x, target.y, target.x, target.y, 5, 0.28f); sfx("attack", ToneGenerator.TONE_PROP_BEEP)
+        gemmaTalk(listOf("BOOM! Kena telak! 😂", "Nah gitu dong, jagoanku! 💖", "Wih, serangannya mantap! ✨").random(random))
+        if (target.hp <= 0f) defeat(target) else say("Serangan player mengenai target!", 0.7f)
+    }
     private fun sfx(asset: String, fallback: Int = ToneGenerator.TONE_PROP_BEEP) {
         try {
             val candidates = when (asset) {
@@ -325,7 +340,10 @@ private class ForestGameView(context: Context) : View(context) {
         hitFlash = max(0f, hitFlash-dt)
         effects.forEach { it.life -= dt }
         effects.removeAll { it.life <= 0f }
+        mobs.forEach { it.hitEmojiTime = max(0f, it.hitEmojiTime - dt); if (it.hitEmojiTime <= 0f) it.hitEmoji = "" }
         messageTime = max(0f, messageTime - dt)
+        gemmaChatTime = max(0f, gemmaChatTime - dt); gemmaChatTimer -= dt
+        if (gemmaChatTimer <= 0f) { gemmaRandomTalk(); gemmaChatTimer = 12f + random.nextFloat() * 10f }
         attackTimer = max(0f, attackTimer - dt); gemmaTimer = max(0f, gemmaTimer - dt)
         dodgeCooldown = max(0f, dodgeCooldown - dt); dodgeTime = max(0f, dodgeTime - dt)
         skillCooldown = max(0f, skillCooldown - dt); invuln = max(0f, invuln - dt)
@@ -368,22 +386,14 @@ private class ForestGameView(context: Context) : View(context) {
             }
         }
 
-        if (attackTimer <= 0f) {
-            val target = mobs.filter { it.alive && dist(it.x, it.y, x, y) < 112f }
-                .minByOrNull { dist(it.x, it.y, x, y) }
-            if (target != null) {
-                target.hp -= damage + weaponLevel*5f; attackTimer = 0.7f
-                fx(x,y,target.x,target.y,2); fx(target.x,target.y,target.x,target.y,5,0.28f); sfx("attack", ToneGenerator.TONE_PROP_BEEP)
-                if (target.hp <= 0f) defeat(target) else say("Serangan dasar mengenai target.", 0.65f)
-            }
-        }
         if (gemmaTimer <= 0f && command != "GUARD") {
             val target = mobs.filter { it.alive && dist(it.x, it.y, gemmaX, gemmaY) < 230f }
                 .minByOrNull { dist(it.x, it.y, gemmaX, gemmaY) }
             if (target != null) {
                 target.hp -= 10f + (level - 1) * 2f; gemmaTimer = 2f
+                target.hitEmoji = "🌟"; target.hitEmojiTime = 0.7f
                 fx(gemmaX,gemmaY,target.x,target.y,1,0.52f); sfx("spell", ToneGenerator.TONE_PROP_ACK)
-                say("Gemma: ✨ Arcane Bolt!", 0.9f)
+                gemmaTalk(listOf("Arcane Bolt! ✨", "Kena sihirku! Hehe! 🌟", "Dari Gemma dengan cinta! 💜").random(random), 2.5f)
                 if (target.hp <= 0f) defeat(target)
             }
         }
@@ -397,6 +407,7 @@ private class ForestGameView(context: Context) : View(context) {
         if (!bossSpawned && level >= 5 && kills >= 18) {
             bossSpawned = true; mobs.add(Mob(810f, 390f, 2, 1200f, 1200f))
             say("THORNHEART GUARDIAN muncul! Serang saat ia selesai menghantam.", 5f)
+            gemmaTalk("BOSS DATANG! Jangan panik, aku bantu! 😤💖", 4f)
         }
         if (bossSpawned && !bossCleared && mobs.none { it.alive && it.kind == 2 }) {
             bossCleared = true; exp += 250; gold += 125
@@ -568,6 +579,7 @@ private class ForestGameView(context: Context) : View(context) {
                 paint.color = Color.rgb(110,70,39); paint.strokeWidth = 6f; c.drawLine(m.x-22,m.y-24,m.x-39,m.y-40,paint); c.drawLine(m.x+22,m.y-24,m.x+39,m.y-40,paint); paint.strokeWidth = 1f
                 bar(c,m.x-36,m.y-50,72f,7f,m.hp,m.maxHp,Color.rgb(210,64,64))
                 text(c,"THORNHEART",m.x-47,m.y-57,9f,Color.rgb(255,220,140))
+                if (m.hitEmojiTime > 0f && m.hitEmoji.isNotBlank()) text(c,m.hitEmoji,m.x-12f,m.y-62f,22f,Color.WHITE)
                 if (m.windup > 0f) text(c,"DODGE!",m.x-24,m.y+45,12f,Color.YELLOW)
             } else {
                 paint.color = Color.argb(95,0,0,0); c.drawOval(RectF(m.x-19,m.y+6,m.x+20,m.y+17),paint)
@@ -581,6 +593,7 @@ private class ForestGameView(context: Context) : View(context) {
                     paint.color = Color.rgb(240,218,157); c.drawCircle(m.x-6,m.y-12,2.5f,paint); c.drawCircle(m.x+6,m.y-12,2.5f,paint)
                 }
                 bar(c,m.x-19,m.y-28,38f,5f,m.hp,m.maxHp,Color.rgb(207,70,65))
+                if (m.hitEmojiTime > 0f && m.hitEmoji.isNotBlank()) text(c,m.hitEmoji,m.x-12f,m.y-37f,19f,Color.WHITE)
                 if (m.windup > 0f) text(c,"!",m.x-3,m.y-32,16f,Color.YELLOW)
             }
         }
@@ -589,6 +602,14 @@ private class ForestGameView(context: Context) : View(context) {
         drawAnimatedCharacter(c, gemmaSheet, gemmaX, gemmaY+5f, gemmaMoving, facingColumn(x-gemmaX,y-gemmaY), 43f, 48f)
         text(c,"GEMMA",gemmaX-23,gemmaY-49,9f,Color.rgb(235,202,255))
         text(c,"✦",gemmaX+13,gemmaY-35+kotlin.math.sin(clock*4f)*3f,12f,Color.rgb(168,224,255))
+        if (gemmaChatTime > 0f) {
+            val bubbleW = 210f; val bubbleH = 43f
+            val bx = (gemmaX + 22f).coerceIn(8f, 742f); val by = (gemmaY - 102f).coerceIn(56f, 420f)
+            paint.color = Color.argb(238, 250, 247, 231); c.drawRoundRect(RectF(bx, by, bx + bubbleW, by + bubbleH), 10f, 10f, paint)
+            paint.color = Color.rgb(128, 91, 158); paint.style = Paint.Style.STROKE; paint.strokeWidth = 2f
+            c.drawRoundRect(RectF(bx, by, bx + bubbleW, by + bubbleH), 10f, 10f, paint); paint.style = Paint.Style.FILL
+            text(c, gemmaChat.take(31), bx + 9f, by + 17f, 10f, Color.rgb(54, 43, 65)); text(c, gemmaChat.drop(31).take(31), bx + 9f, by + 32f, 10f, Color.rgb(54, 43, 65))
+        }
         if (invuln <= 0f || (clock * 12f).toInt() % 2 == 0) {
             paint.color=Color.argb(80,0,0,0); c.drawOval(RectF(x-17,y+6,x+18,y+17),paint)
             val moving = kotlin.math.abs(moveX)+kotlin.math.abs(moveY) > 0.08f
@@ -699,7 +720,9 @@ private class ForestGameView(context: Context) : View(context) {
         }
         if(messageTime>0f){paint.color=Color.argb(235,12,20,23);c.drawRoundRect(RectF(270f,470f,690f,510f),7f,7f,paint);text(c,message.take(54),284f,495f,12f,Color.rgb(255,235,189))}
         paint.color=Color.argb(135,190,210,190);c.drawCircle(88f,445f,51f,paint); paint.color=Color.argb(190,49,90,75);c.drawCircle(88f+moveX*20f,445f+moveY*20f,21f,paint);text(c,"MOVE",65f,510f,10f)
-        paint.color=Color.argb(130,0,0,0); c.drawRect(739f,416f,823f,486f,paint); paint.color=Color.rgb(91,49,46); c.drawRect(736f,413f,820f,480f,paint)
+        paint.color=Color.argb(130,0,0,0); c.drawRect(634f,416f,728f,486f,paint); paint.color=Color.rgb(105,59,39); c.drawRect(631f,413f,725f,480f,paint)
+        paint.color=Color.rgb(222,153,93); c.drawRect(633f,415f,723f,417f,paint); paint.color=Color.rgb(243,205,151); paint.style=Paint.Style.STROKE; c.drawRect(631.5f,413.5f,724.5f,479.5f,paint); paint.style=Paint.Style.FILL
+        text(c,"⚔",668f,443f,23f,Color.rgb(255,225,164)); text(c,"ATTACK",646f,468f,11f,Color.rgb(255,242,218)); text(c,if(attackTimer>0f) "WAIT" else "READY",650f,476f,8f,Color.rgb(255,225,150))
         paint.color=Color.rgb(167,88,72); c.drawRect(738f,415f,818f,417f,paint); paint.color=Color.rgb(225,179,127); paint.style=Paint.Style.STROKE; c.drawRect(736.5f,413.5f,819.5f,479.5f,paint); paint.style=Paint.Style.FILL
         drawPixelIcon(c,"dodge",778f,440f,Color.rgb(255,224,168)); text(c,"DODGE",754f,468f,10f,Color.rgb(255,242,218))
         paint.color=Color.argb(130,0,0,0); c.drawRect(829f,416f,915f,486f,paint); paint.color=Color.rgb(48,42,88); c.drawRect(826f,413f,912f,480f,paint)
@@ -1184,7 +1207,8 @@ private class ForestGameView(context: Context) : View(context) {
                 else if(ty in 10f..52f && tx>=550f){
                     val idx=((tx-554f)/96f).toInt().coerceIn(0,3)
                     command=listOf("FOLLOW","ATTACK","GUARD","RANGE")[idx];say("Gemma menerima perintah $command.")
-                } else if(tx in 735f..825f && ty>390f && dodgeCooldown<=0f){
+                } else if(tx in 630f..730f && ty>390f){ performPlayerAttack() }
+                 else if(tx in 735f..825f && ty>390f && dodgeCooldown<=0f){
                     dodgeTime=0.22f;dodgeCooldown=3f;invuln=0.28f;say("Dodge!",0.7f)
                 } else if(tx>825f && ty>390f && skillCooldown<=0f){
                     if(mana<25f) say("Mana belum cukup untuk Arc Slash.",1f)
@@ -1194,6 +1218,7 @@ private class ForestGameView(context: Context) : View(context) {
                         fx(x+12f,y-8f,x+12f,y-8f,5,0.42f); fx(x+5f,y-12f,x+5f,y-12f,7,0.40f); fx(x,y,x,y,6,0.25f)
                         targets.forEach { m ->
                             m.hp-=42f+(skillLevel-1)*18f+weaponLevel*5f
+                             m.hitEmoji = "⚡"; m.hitEmojiTime = 0.85f
                             fx(m.x,m.y,m.x,m.y,5,0.42f); fx(m.x,m.y,m.x,m.y,2,0.30f); fx(m.x,m.y,m.x,m.y,6,0.26f)
                             if(m.hp<=0f)defeat(m)
                         }
