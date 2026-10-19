@@ -1016,8 +1016,8 @@ class MainActivity : AppCompatActivity() {
         "MODE PILIH LANGKAH GAME: Pilih tepat satu aksi HIT atau STAND berdasarkan nilai tangan privatmu dan target 21. HIT berarti meminta satu kartu; STAND berarti berhenti. Jangan memilih HIT jika total tangan sudah 21 atau lebih. " +
         "MODE CHAT ONLY: Tidak ada aksi game. Gunakan ACTION: WAIT dan balas pesan pemain dengan komentar singkat yang relevan. Jangan mengambil kartu, mengubah giliran, chip, atau hasil. " +
         "FORMAT WAJIB: Keluarkan hanya dua baris, tanpa Markdown, awalan, daftar, atau penjelasan tambahan. Baris pertama harus ACTION: HIT, ACTION: STAND, atau ACTION: WAIT sesuai mode. Baris kedua harus COMMENT: diikuti satu kalimat pendek berbahasa Indonesia. " +
-        "Contoh mode game: ACTION: STAND\\nCOMMENT: Hmm, aku cukup puas dengan kartuku. Sekarang giliranmu deg-degan! " +
-        "Contoh mode chat: ACTION: WAIT\\nCOMMENT: Hahaha, kamu ada-ada saja! Aku tetap fokus main, ya."
+        "Contoh mode game: ACTION: STAND\nCOMMENT: Hmm, aku cukup puas dengan kartuku. Sekarang giliranmu deg-degan! " +
+        "Contoh mode chat: ACTION: WAIT\nCOMMENT: Hahaha, kamu ada-ada saja! Aku tetap fokus main, ya."
 
     private fun startBlackjackRound() {
         if (!blackjackBotInvited || blackjackBotBusy) return
@@ -1090,8 +1090,8 @@ class MainActivity : AppCompatActivity() {
                         timedOut = true
                     }
 
-                    var action = Regex("(?im)^\\s*ACTION\\s*:\\s*(HIT|STAND)\\b").find(output)?.groupValues?.get(1)?.uppercase()
-                    var comment = Regex("(?im)^\\s*COMMENT\\s*:\\s*(.+)$").find(output)?.groupValues?.get(1)?.trim().orEmpty()
+                    var action = Regex("(?im)^\\s*(?:[-*]\\s*)?(?:\\*\\*)?ACTION(?:\\*\\*)?\\s*[:：=-]\\s*(HIT|STAND)\\b").find(output)?.groupValues?.get(1)?.uppercase()
+                    var comment = Regex("(?im)^\\s*(?:[-*]\\s*)?(?:\\*\\*)?COMMENT(?:\\*\\*)?\\s*[:：=-]\\s*(.+)$").find(output)?.groupValues?.get(1)?.trim().orEmpty()
 
                     // Retry malformed/empty output once. Don't start a second inference after a timeout,
                     // because the native inference engine may still be unwinding the cancelled request.
@@ -1107,8 +1107,8 @@ class MainActivity : AppCompatActivity() {
                                 ).collect { retry.append(it) }
                             }
                             output = retry.toString()
-                            action = Regex("(?im)^\\s*ACTION\\s*:\\s*(HIT|STAND)\\b").find(output)?.groupValues?.get(1)?.uppercase()
-                            comment = Regex("(?im)^\\s*COMMENT\\s*:\\s*(.+)$").find(output)?.groupValues?.get(1)?.trim().orEmpty()
+                            action = Regex("(?im)^\\s*(?:[-*]\\s*)?(?:\\*\\*)?ACTION(?:\\*\\*)?\\s*[:：=-]\\s*(HIT|STAND)\\b").find(output)?.groupValues?.get(1)?.uppercase()
+                            comment = Regex("(?im)^\\s*(?:[-*]\\s*)?(?:\\*\\*)?COMMENT(?:\\*\\*)?\\s*[:：=-]\\s*(.+)$").find(output)?.groupValues?.get(1)?.trim().orEmpty()
                         } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
                             timedOut = true
                         }
