@@ -865,7 +865,7 @@ class MainActivity : AppCompatActivity() {
             else toast("Naya sedang mendapat giliran.")
         }
         chatColumn.addView(actions, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
-        addAction(chatColumn, if (blackjackBotBusy) "AI sedang berjalan…" else "↻ Pulihkan AI • pertahankan ronde") {
+        addAction(chatColumn, if (blackjackBotBusy) "↻ Hentikan & pulihkan AI" else "↻ Pulihkan AI • pertahankan ronde") {
             recoverBlackjackAi()
         }
         addAction(chatColumn, "Keluar ke Discover") { leaveBlackjackGame() }
@@ -877,10 +877,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun recoverBlackjackAi() {
-        if (blackjackBotBusy) {
-            toast("Naya masih memproses jawaban. Coba pulihkan setelah proses berhenti.")
-            return
-        }
         if (!engineReady) {
             toast("Engine AI belum siap.")
             return
@@ -893,8 +889,35 @@ class MainActivity : AppCompatActivity() {
 
         val resumeBotTurn = blackjackRecoveryNeedsBotTurn ||
             (blackjackRoundActive && !blackjackPlayerTurn)
-        blackjackMessage = "Memulihkan sesi Naya… kartu dan chip tidak akan di-reset."
+        val interruptedJob = if (blackjackBotBusy) blackjackAiJob else null
+        blackjackRecoveryNeedsBotTurn = resumeBotTurn && blackjackRoundActive
+        blackjackMessage = if (interruptedJob != null) {
+            "Menghentikan respons yang macet dan memulihkan Naya… ronde tetap aman."
+        } else {
+            "Memulihkan sesi Naya… kartu dan chip tidak akan di-reset."
+        }
         renderPage()
+
+        if (interruptedJob != null) {
+            // Cancel the current chat/game inference, wait for it to unwind, then reload the model.
+            interruptedJob.cancel()
+            lifecycleScope.launch {
+                interruptedJob.join()
+                blackjackBotBusy = false
+                beginBlackjackAiRecovery(file, resumeBotTurn)
+            }
+        } else {
+            beginBlackjackAiRecovery(file, resumeBotTurn)
+        }
+    }
+
+    private fun beginBlackjackAiRecovery(file: File, resumeBotTurn: Boolean) {
+        if (!engineReady || modelLoadInProgress) {
+            blackjackMessage = "Engine masih sibuk. Tekan Pulihkan AI lagi sebentar lagi."
+            blackjackRecoveryNeedsBotTurn = resumeBotTurn && blackjackRoundActive
+            renderPage()
+            return
+        }
         loadModelFile(
             file,
             false,
