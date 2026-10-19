@@ -1039,6 +1039,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun playerDrawBlackjackCard() {
         if (!blackjackRoundActive || !blackjackPlayerTurn || blackjackBotBusy) return
+        blackjackRecoveryNeedsBotTurn = false
         val card = drawBlackjackCard()
         blackjackPlayerHand.add(card)
         val score = handValue(blackjackPlayerHand)
@@ -1065,6 +1066,7 @@ class MainActivity : AppCompatActivity() {
     private fun runBlackjackBotTurn() {
         if (!blackjackBotInvited || !blackjackRoundActive || blackjackBotBusy) return
         if (!engineReady || activeModelName == null) { blackjackMessage = "Model AI tidak siap."; renderPage(); return }
+        blackjackRecoveryNeedsBotTurn = false
         blackjackPlayerTurn = false
         blackjackBotBusy = true
         blackjackMessage = "Naya sedang mempertimbangkan langkahnya…"
