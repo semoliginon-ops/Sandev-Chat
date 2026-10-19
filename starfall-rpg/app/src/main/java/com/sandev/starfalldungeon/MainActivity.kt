@@ -499,18 +499,37 @@ private class ForestGameView(context: Context) : View(context) {
 
     private fun menuButton(c: Canvas, label: String, bx: Float, by: Float, bw: Float, bh: Float, active: Boolean = false) {
         paint.shader = null
-        paint.color = Color.argb(90, 0, 0, 0)
-        c.drawRect(bx + 2f, by + 3f, bx + bw + 2f, by + bh + 3f, paint)
-        paint.color = if (active) Color.rgb(81, 78, 128) else Color.rgb(39, 66, 55)
+        // Deep offset shadow, crisp one-pixel frame, inset highlight and darker lower bevel.
+        paint.color = Color.argb(150, 0, 0, 0)
+        c.drawRect(bx + 3f, by + 4f, bx + bw + 3f, by + bh + 4f, paint)
+        paint.color = if (active) Color.rgb(73, 70, 113) else Color.rgb(32, 53, 47)
         c.drawRect(bx, by, bx + bw, by + bh, paint)
-        paint.color = if (active) Color.rgb(143, 135, 193) else Color.rgb(103, 143, 105)
-        c.drawRect(bx + 2f, by + 2f, bx + bw - 2f, by + 4f, paint)
-        paint.color = Color.rgb(20, 34, 30)
-        c.drawRect(bx, by + bh - 3f, bx + bw, by + bh, paint)
-        paint.color = Color.rgb(220, 199, 145); paint.style = Paint.Style.STROKE; paint.strokeWidth = 1f
+        paint.color = if (active) Color.rgb(120, 113, 171) else Color.rgb(64, 104, 78)
+        c.drawRect(bx + 2f, by + 2f, bx + bw - 2f, by + 5f, paint)
+        paint.color = Color.rgb(17, 29, 27)
+        c.drawRect(bx + 2f, by + bh - 4f, bx + bw - 2f, by + bh - 2f, paint)
+        paint.color = if (active) Color.rgb(226, 208, 158) else Color.rgb(112, 142, 111)
+        paint.style = Paint.Style.STROKE; paint.strokeWidth = 1f
         c.drawRect(bx + 0.5f, by + 0.5f, bx + bw - 0.5f, by + bh - 0.5f, paint)
         paint.style = Paint.Style.FILL; paint.strokeWidth = 1f
-        text(c, label, bx + 12f, by + bh * 0.62f, if (label.length > 24) 11f else 14f, Color.rgb(248, 241, 216))
+        val up = label.uppercase()
+        val iconKind = when {
+            up.contains("SKILL") || up.contains("ARC") -> "skill"
+            up.contains("EQUIPMENT") || up.contains("SENJATA") || up.contains("ARMOR") || up.contains("BESI") -> "guard"
+            up.contains("CHARACTER") || up.contains("HERO") || up.contains("PLAYER") -> "follow"
+            up.contains("INVENTORY") || up.contains("RAMUAN") || up.contains("TOKO") -> "range"
+            else -> "attack"
+        }
+        paint.color = Color.rgb(15, 27, 26)
+        c.drawRect(bx + 7f, by + bh / 2f - 11f, bx + 29f, by + bh / 2f + 11f, paint)
+        drawPixelIcon(c, iconKind, bx + 18f, by + bh / 2f, if (active) Color.rgb(255, 224, 157) else Color.rgb(194, 215, 170))
+        val fontSize = when {
+            label.length > 28 -> 9f
+            label.length > 22 -> 10f
+            label.length > 15 -> 11f
+            else -> 13f
+        }
+        text(c, label, bx + 36f, by + bh * 0.62f, fontSize, Color.rgb(248, 242, 222))
     }
 
     private fun cityBlocked(ax: Float, ay: Float): Boolean {
@@ -618,85 +637,151 @@ private class ForestGameView(context: Context) : View(context) {
         text(c,"GEMMA",gemmaX-23f,gemmaFeetY-55f,9f,Color.rgb(255,224,255))
         paint.color=Color.argb(218,12,23,25);c.drawRoundRect(RectF(18f,16f,465f,82f),9f,9f,paint); text(c,"KOTA ASTERFALL",34f,43f,20f,Color.rgb(255,222,153)); text(c,cityMessage.take(52),34f,65f,11f,Color.WHITE)
         paint.color=Color.argb(125,190,210,190);c.drawCircle(88f,445f,49f,paint); paint.color=Color.argb(200,49,90,75);c.drawCircle(88f+moveX*19f,445f+moveY*19f,20f,paint); text(c,"GERAK",60f,510f,10f)
-        menuButton(c,"WARGA",30f,420f,150f,42f); menuButton(c,"TOKO",190f,420f,150f,42f); menuButton(c,"PANDAI BESI",350f,420f,180f,42f)
-        menuButton(c,"MASUK HUTAN",690f,475f,240f,45f,true); menuButton(c,"MENU",30f,475f,150f,42f)
+        menuButton(c,"WARGA",200f,420f,150f,42f); menuButton(c,"TOKO",355f,420f,150f,42f); menuButton(c,"PANDAI BESI",510f,420f,180f,42f)
+        menuButton(c,"MASUK HUTAN",690f,475f,240f,45f,true); menuButton(c,"MENU",200f,475f,150f,42f)
     }
 
     private fun drawMenu(c: Canvas) {
-        c.drawColor(Color.rgb(17,34,30))
-        for(i in 0..59){paint.color=if(i%2==0) Color.rgb(22,43,36) else Color.rgb(19,38,33);c.drawRect(i*16f,0f,i*16f+16f,540f,paint)}
-        paint.color=Color.argb(238,9,20,22);c.drawRoundRect(RectF(24f,18f,936f,522f),12f,12f,paint)
-        text(c,"STARFALL RPG",52f,61f,24f,Color.rgb(236,220,165))
-        text(c,screen,52f,92f,16f,Color.rgb(201,218,203))
-        text(c,playerName.ifBlank{"Nama belum dibuat"}+" · "+hero+" · LV "+level+" · GOLD "+gold,520f,59f,12f,Color.rgb(244,218,143))
-        when(screen){
+        c.drawColor(Color.rgb(12, 24, 25))
+        // Dark forest-grain backdrop, kept subtle so panels and labels stay readable.
+        for (i in 0..59) {
+            paint.color = if (i % 2 == 0) Color.rgb(19, 37, 34) else Color.rgb(16, 32, 31)
+            c.drawRect(i * 16f, 0f, i * 16f + 16f, 540f, paint)
+        }
+        paint.color = Color.argb(245, 8, 17, 21)
+        c.drawRoundRect(RectF(22f, 16f, 938f, 524f), 10f, 10f, paint)
+        paint.color = Color.rgb(87, 116, 91); c.drawRect(34f, 28f, 926f, 31f, paint)
+        text(c, "STARFALL RPG", 48f, 61f, 23f, Color.rgb(242, 218, 158))
+        text(c, screen, 50f, 88f, 12f, Color.rgb(159, 197, 166))
+        val status = playerName.ifBlank { "Nama belum dibuat" } + "  ·  " + hero + "  ·  LV " + level + "  ·  GOLD " + gold
+        text(c, status.take(46), 485f, 60f, 11f, Color.rgb(245, 218, 146))
+        // Two separated content panels establish a consistent hierarchy on every screen.
+        paint.color = Color.rgb(17, 31, 31); c.drawRoundRect(RectF(38f, 105f, 458f, 494f), 7f, 7f, paint)
+        paint.color = Color.rgb(27, 43, 39); c.drawRect(40f, 107f, 456f, 110f, paint)
+        if (screen != "MAIN" && screen != "PAUSE") {
+            paint.color = Color.rgb(15, 28, 29); c.drawRoundRect(RectF(478f, 105f, 918f, 494f), 7f, 7f, paint)
+            paint.color = Color.rgb(70, 97, 76); c.drawRect(480f, 107f, 916f, 110f, paint)
+        }
+        when (screen) {
             "MAIN" -> {
-                text(c,"Bangun hero, kumpulkan perlengkapan, dan taklukkan hutan.",52f,133f,13f)
-                menuButton(c,"MULAI PETUALANGAN",52f,158f,360f,49f,playerName.isNotBlank())
-                menuButton(c,"CREATE PLAYER / PILIH HERO",52f,218f,360f,45f)
-                menuButton(c,"CHARACTER",52f,274f,170f,43f);menuButton(c,"INVENTORY",242f,274f,170f,43f)
-                menuButton(c,"SKILLS",52f,328f,170f,43f);menuButton(c,"EQUIPMENT",242f,328f,170f,43f)
-                menuButton(c,"QUEST & MAP",52f,382f,170f,43f);menuButton(c,"SETTINGS",242f,382f,170f,43f)
-                text(c,"Offline · Save lokal · Prototype",520f,205f,15f,Color.rgb(166,206,170))
-                text(c,"Vanguard: HP tinggi | Ranger: damage tinggi",520f,235f,12f)
-                text(c,"Mage: lebih rapuh, skill area lebih kuat",520f,260f,12f)
-                menuButton(c,"KOTA ASTERFALL",520f,300f,280f,48f)
-            }
-            "CITY" -> {
-                drawCity(c)
+                text(c, "PETUALANGAN", 54f, 132f, 12f, Color.rgb(186, 207, 169))
+                menuButton(c, "MULAI PETUALANGAN", 52f, 145f, 390f, 49f, playerName.isNotBlank())
+                menuButton(c, "CREATE PLAYER / PILIH HERO", 52f, 207f, 390f, 46f)
+                menuButton(c, "CHARACTER", 52f, 270f, 185f, 44f)
+                menuButton(c, "INVENTORY", 252f, 270f, 190f, 44f)
+                menuButton(c, "SKILLS", 52f, 326f, 185f, 44f)
+                menuButton(c, "EQUIPMENT", 252f, 326f, 190f, 44f)
+                menuButton(c, "QUEST & MAP", 52f, 382f, 185f, 44f)
+                menuButton(c, "SETTINGS", 252f, 382f, 190f, 44f)
+                paint.color = Color.rgb(21, 39, 37); c.drawRoundRect(RectF(490f, 121f, 900f, 293f), 6f, 6f, paint)
+                text(c, "JELAJAHI ASTERFALL", 512f, 154f, 16f, Color.rgb(241, 216, 153))
+                text(c, "Bangun hero, kumpulkan perlengkapan,", 512f, 188f, 12f)
+                text(c, "dan taklukkan monster di Hutan Sunyi.", 512f, 209f, 12f)
+                text(c, "Vanguard · HP tinggi", 512f, 244f, 11f, Color.rgb(183, 211, 177))
+                text(c, "Ranger · damage tinggi  |  Mage · skill area", 512f, 265f, 10f, Color.rgb(183, 211, 177))
+                menuButton(c, "KOTA ASTERFALL", 510f, 326f, 340f, 52f, true)
+                text(c, "Offline  ·  Save lokal  ·  Pixel fantasy RPG", 510f, 412f, 11f, Color.rgb(144, 177, 155))
+                text(c, "Progres tersimpan otomatis di perangkat.", 510f, 435f, 10f, Color.rgb(144, 177, 155))
             }
             "CREATE" -> {
-                text(c,"Buat nama pemain lalu pilih kelas hero.",52f,133f,13f)
-                menuButton(c,if(playerName.isBlank())"ISI NAMA PEMAIN" else "NAMA: "+playerName,52f,158f,360f,46f)
-                menuButton(c,"VANGUARD · HP TINGGI",500f,151f,365f,46f,hero=="Vanguard")
-                menuButton(c,"RANGER · DAMAGE TINGGI",500f,209f,365f,46f,hero=="Ranger")
-                menuButton(c,"MAGE · ARC SLASH KUAT",500f,267f,365f,46f,hero=="Mage")
-                text(c,if(hero=="Vanguard")"HP 140 · damage dasar" else if(hero=="Ranger")"HP 110 · damage lebih tinggi" else "HP 90 · skill area lebih kuat",500f,337f,12f,Color.rgb(225,212,171))
-                menuButton(c,"SIMPAN KARAKTER",52f,225f,360f,46f);menuButton(c,"KEMBALI",52f,285f,170f,43f)
+                text(c, "PROFIL PEMAIN", 54f, 132f, 12f, Color.rgb(186, 207, 169))
+                menuButton(c, if (playerName.isBlank()) "ISI NAMA PEMAIN" else "NAMA: " + playerName.take(16), 52f, 145f, 370f, 46f)
+                menuButton(c, "SIMPAN KARAKTER", 52f, 207f, 370f, 46f, true)
+                menuButton(c, "KEMBALI", 52f, 269f, 200f, 44f)
+                text(c, "PILIH KELAS", 500f, 132f, 12f, Color.rgb(186, 207, 169))
+                menuButton(c, "VANGUARD · HP TINGGI", 500f, 145f, 380f, 46f, hero == "Vanguard")
+                menuButton(c, "RANGER · DAMAGE TINGGI", 500f, 207f, 380f, 46f, hero == "Ranger")
+                menuButton(c, "MAGE · ARC SLASH KUAT", 500f, 269f, 380f, 46f, hero == "Mage")
+                paint.color = Color.rgb(25, 42, 40); c.drawRoundRect(RectF(500f, 340f, 880f, 407f), 5f, 5f, paint)
+                text(c, if (hero == "Vanguard") "HP 140  ·  damage seimbang" else if (hero == "Ranger") "HP 110  ·  damage lebih tinggi" else "HP 90  ·  skill area lebih kuat", 518f, 369f, 12f, Color.rgb(233, 212, 159))
+                text(c, "Pilihan kelas bisa diganti kapan saja.", 518f, 390f, 10f, Color.rgb(170, 194, 169))
             }
             "CHARACTER" -> {
-                text(c,"Nama: "+playerName.ifBlank{"Belum dibuat"},52f,145f,15f)
-                text(c,"Hero: "+hero+"    Level: "+level+"    EXP: "+exp+" / "+need(level),52f,180f,14f)
-                text(c,"HP: "+hp.toInt()+" / "+maxHp.toInt()+"    Damage: "+(damage.toInt()+weaponLevel*5),52f,215f,14f)
-                text(c,"Armor upgrade: "+armorLevel+"    Weapon upgrade: "+weaponLevel,52f,250f,14f)
-                text(c,"Monster dikalahkan: "+kills,52f,285f,14f)
-                menuButton(c,"GANTI HERO",52f,330f,220f,44f);menuButton(c,"KEMBALI",52f,390f,220f,43f)
+                text(c, "STATUS KARAKTER", 54f, 132f, 12f, Color.rgb(186, 207, 169))
+                text(c, "Nama: " + playerName.ifBlank { "Belum dibuat" }, 56f, 160f, 14f)
+                text(c, "Kelas: " + hero + "   ·   Level: " + level, 56f, 197f, 13f)
+                text(c, "EXP: " + exp + " / " + need(level), 56f, 231f, 13f)
+                text(c, "HP: " + hp.toInt() + " / " + maxHp.toInt(), 56f, 265f, 13f, Color.rgb(230, 155, 147))
+                text(c, "Damage: " + (damage.toInt() + weaponLevel * 5), 56f, 299f, 13f)
+                text(c, "Monster dikalahkan: " + kills, 56f, 333f, 13f)
+                menuButton(c, "GANTI HERO", 52f, 382f, 185f, 44f)
+                menuButton(c, "KEMBALI", 252f, 382f, 190f, 44f)
+                text(c, "Statistik akan mengikuti level dan equipment.", 500f, 151f, 12f, Color.rgb(184, 207, 175))
+                bar(c, 510f, 184f, 340f, 15f, hp, maxHp, Color.rgb(204, 74, 76))
+                text(c, "HP HERO", 510f, 176f, 10f)
+                bar(c, 510f, 225f, 340f, 15f, gemmaHp, gemmaMaxHp, Color.rgb(166, 100, 206))
+                text(c, "GEMMA", 510f, 217f, 10f)
+                text(c, "Weapon +"+(weaponLevel*5)+" damage", 510f, 278f, 12f)
+                text(c, "Armor -"+(armorLevel*3)+" damage diterima", 510f, 303f, 12f)
             }
             "INVENTORY" -> {
-                text(c,"Ramuan HP × "+potions+" · memulihkan 45 HP",52f,154f,15f,Color.rgb(222,145,145))
-                text(c,"Material umum × "+materials,52f,192f,15f,Color.rgb(190,214,167));text(c,"Gold: "+gold,52f,230f,15f,Color.rgb(244,218,143))
-                menuButton(c,"GUNAKAN RAMUAN",52f,260f,260f,46f,potions>0&&hp<maxHp);menuButton(c,"KEMBALI",52f,330f,200f,43f)
+                text(c, "BARANG BAWAAN", 54f, 132f, 12f, Color.rgb(186, 207, 169))
+                text(c, "Ramuan HP  ×  " + potions, 56f, 166f, 15f, Color.rgb(230, 155, 147))
+                text(c, "Memulihkan 45 HP saat digunakan.", 56f, 192f, 11f)
+                text(c, "Material umum  ×  " + materials, 56f, 235f, 14f, Color.rgb(190, 214, 167))
+                text(c, "Gold  ·  " + gold, 56f, 278f, 14f, Color.rgb(244, 218, 143))
+                menuButton(c, "GUNAKAN RAMUAN", 52f, 326f, 245f, 46f, potions > 0 && hp < maxHp)
+                menuButton(c, "KEMBALI", 52f, 390f, 190f, 44f)
+                text(c, "Drop monster bisa berisi ramuan dan material.", 500f, 151f, 12f, Color.rgb(184, 207, 175))
+                text(c, "Kalahkan monster untuk mendapat EXP dan gold.", 500f, 184f, 11f)
+                text(c, "Gunakan ramuan saat HP hero berkurang.", 500f, 210f, 11f)
             }
             "SKILLS" -> {
-                text(c,"ARC SLASH · Level "+skillLevel+" / 5",52f,154f,16f,Color.rgb(211,176,244))
-                text(c,"Damage area "+(42+(skillLevel-1)*18+weaponLevel*5)+" · cooldown 6 detik",52f,184f,13f)
-                menuButton(c,"UPGRADE ARC SLASH · "+(skillLevel*45)+" GOLD",52f,205f,350f,46f,skillLevel<5&&gold>=skillLevel*45)
-                text(c,"Skill upgrade menambah damage.",52f,285f,12f);menuButton(c,"KEMBALI",52f,355f,200f,43f)
+                text(c, "SKILL AKTIF", 54f, 132f, 12f, Color.rgb(186, 207, 169))
+                text(c, "ARC SLASH  ·  Level " + skillLevel + " / 5", 56f, 166f, 16f, Color.rgb(211, 176, 244))
+                text(c, "Damage area: " + (42 + (skillLevel - 1) * 18 + weaponLevel * 5), 56f, 199f, 13f)
+                text(c, "Cooldown: 6 detik", 56f, 228f, 12f)
+                menuButton(c, "UPGRADE ARC SLASH · " + (skillLevel * 45) + " GOLD", 52f, 258f, 370f, 46f, skillLevel < 5 && gold >= skillLevel * 45)
+                menuButton(c, "KEMBALI", 52f, 382f, 190f, 44f)
+                text(c, "Upgrade menambah damage serangan area.", 500f, 151f, 12f, Color.rgb(184, 207, 175))
+                text(c, "Dekati musuh lalu tekan tombol Arc Slash.", 500f, 184f, 11f)
+                text(c, "Gunakan Dodge untuk menghindari serangan.", 500f, 210f, 11f)
             }
             "EQUIPMENT" -> {
-                text(c,"Senjata: +"+(weaponLevel*5)+" damage",52f,154f,15f)
-                menuButton(c,"UPGRADE SENJATA · "+((weaponLevel+1)*55)+" GOLD",52f,175f,350f,46f,weaponLevel<5&&gold>=(weaponLevel+1)*55)
-                text(c,"Armor: pengurangan damage "+(armorLevel*3),52f,255f,15f)
-                menuButton(c,"UPGRADE ARMOR · "+((armorLevel+1)*50)+" GOLD",52f,276f,350f,46f,armorLevel<5&&gold>=(armorLevel+1)*50)
-                menuButton(c,"KEMBALI",52f,360f,200f,43f)
+                text(c, "PENGUATAN PERLENGKAPAN", 54f, 132f, 12f, Color.rgb(186, 207, 169))
+                text(c, "Senjata  ·  +" + (weaponLevel * 5) + " damage", 56f, 165f, 14f)
+                menuButton(c, "UPGRADE SENJATA · " + ((weaponLevel + 1) * 55) + " GOLD", 52f, 183f, 370f, 44f, weaponLevel < 5 && gold >= (weaponLevel + 1) * 55)
+                text(c, "Armor  ·  pengurangan damage " + (armorLevel * 3), 56f, 264f, 13f)
+                menuButton(c, "UPGRADE ARMOR · " + ((armorLevel + 1) * 50) + " GOLD", 52f, 281f, 370f, 44f, armorLevel < 5 && gold >= (armorLevel + 1) * 50)
+                menuButton(c, "KEMBALI", 52f, 382f, 190f, 44f)
+                text(c, "Upgrade memakai gold dari hasil berburu.", 500f, 151f, 12f, Color.rgb(184, 207, 175))
+                text(c, "Setiap level senjata menambah damage.", 500f, 184f, 11f)
+                text(c, "Setiap level armor mengurangi damage masuk.", 500f, 210f, 11f)
+                text(c, "Maksimum upgrade: level 5.", 500f, 236f, 11f)
             }
             "QUESTS" -> {
-                text(c,"["+(if(kills>=5)"X" else " ")+"] Pemburu pemula: "+kills+"/5 monster",52f,155f,14f)
-                text(c,"["+(if(kills>=18)"X" else " ")+"] Tantang Guardian: "+kills+"/18 monster",52f,195f,14f)
-                text(c,"["+(if(level>=5)"X" else " ")+"] Tumbuh kuat: capai level 5",52f,235f,14f)
-                text(c,"Map saat ini: Hutan Sunyi",52f,280f,14f,Color.rgb(190,214,167));menuButton(c,"KEMBALI",52f,350f,200f,43f)
+                text(c, "TARGET PERBURUAN", 54f, 132f, 12f, Color.rgb(186, 207, 169))
+                text(c, (if (kills >= 5) "[X]" else "[ ]") + " Pemburu pemula  ·  " + kills + "/5 monster", 56f, 170f, 13f)
+                text(c, (if (kills >= 18) "[X]" else "[ ]") + " Tantang Guardian  ·  " + kills + "/18 monster", 56f, 211f, 12f)
+                text(c, (if (level >= 5) "[X]" else "[ ]") + " Tumbuh kuat  ·  capai level 5", 56f, 252f, 12f)
+                menuButton(c, "KEMBALI", 52f, 382f, 190f, 44f)
+                text(c, "LOKASI", 500f, 151f, 12f, Color.rgb(186, 207, 169))
+                text(c, "Hutan Sunyi", 500f, 184f, 15f, Color.rgb(191, 218, 172))
+                text(c, "Guardian muncul setelah level 5 dan 18 kill.", 500f, 218f, 11f)
             }
             "SETTINGS" -> {
-                text(c,"Mode offline. Progres karakter tersimpan lokal.",52f,160f,14f)
-                text(c,"Joystick kiri · Dodge kanan · Skill Arc Slash.",52f,200f,13f);menuButton(c,"KEMBALI KE MENU UTAMA",52f,270f,300f,46f)
+                text(c, "PENGATURAN", 54f, 132f, 12f, Color.rgb(186, 207, 169))
+                text(c, "Mode offline · progres tersimpan lokal.", 56f, 170f, 13f)
+                text(c, "Joystick kiri · Dodge kanan · Arc Slash.", 56f, 207f, 12f)
+                menuButton(c, "KEMBALI KE MENU UTAMA", 52f, 280f, 320f, 46f)
+                text(c, "VISUAL", 500f, 151f, 12f, Color.rgb(186, 207, 169))
+                text(c, "Tema gelap · border pixel · highlight halus.", 500f, 184f, 11f)
+                text(c, "Kontrol dan efek dibuat ringkas untuk layar HP.", 500f, 210f, 11f)
             }
             "PAUSE" -> {
-                menuButton(c,"LANJUT BERMAIN",52f,150f,300f,46f);menuButton(c,"CHARACTER",52f,210f,300f,43f)
-                menuButton(c,"INVENTORY",52f,265f,300f,43f);menuButton(c,"SKILLS",52f,320f,300f,43f)
-                menuButton(c,"EQUIPMENT",52f,375f,300f,43f);menuButton(c,"MENU UTAMA",500f,375f,300f,43f)
+                text(c, "PERMAINAN DIJEDA", 54f, 132f, 12f, Color.rgb(186, 207, 169))
+                menuButton(c, "LANJUT BERMAIN", 52f, 150f, 370f, 44f, true)
+                menuButton(c, "CHARACTER", 52f, 208f, 180f, 44f)
+                menuButton(c, "INVENTORY", 242f, 208f, 180f, 44f)
+                menuButton(c, "SKILLS", 52f, 266f, 180f, 44f)
+                menuButton(c, "EQUIPMENT", 242f, 266f, 180f, 44f)
+                menuButton(c, "MENU UTAMA", 52f, 324f, 370f, 44f)
+                text(c, "Progress otomatis tersimpan.", 500f, 151f, 12f, Color.rgb(184, 207, 175))
+                text(c, "Kamu bisa lanjut kapan saja.", 500f, 184f, 11f)
             }
         }
     }
+
     private fun showNameDialog() {
         val field=EditText(context);field.setSingleLine(true);field.inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
         field.setText(playerName);field.hint="Nama karakter"
@@ -709,50 +794,56 @@ private class ForestGameView(context: Context) : View(context) {
     private fun clickMenu(tx:Float,ty:Float) {
         sfx("ui", ToneGenerator.TONE_PROP_BEEP)
         fun hit(a:Float,b:Float,w:Float,h:Float)=tx in a..(a+w)&&ty in b..(b+h)
-        when(screen){
-            "MAIN" -> when{
-                hit(52f,158f,360f,49f)->if(playerName.isNotBlank()){screen="CITY";x=745f;y=385f;gemmaX=700f;gemmaY=410f;moveX=0f;moveY=0f;cityMessage="Selamat datang di Asterfall, "+playerName;sfx("door", ToneGenerator.TONE_PROP_ACK)}else screen="CREATE"
-                hit(52f,218f,360f,45f)->screen="CREATE"
-                hit(52f,274f,170f,43f)->screen="CHARACTER";hit(242f,274f,170f,43f)->screen="INVENTORY"
-                hit(52f,328f,170f,43f)->screen="SKILLS";hit(242f,328f,170f,43f)->screen="EQUIPMENT"
-                hit(52f,382f,170f,43f)->screen="QUESTS";hit(242f,382f,170f,43f)->screen="SETTINGS"
-                hit(520f,300f,280f,48f)->{screen="CITY";x=745f;y=385f;gemmaX=700f;gemmaY=410f;moveX=0f;moveY=0f;cityMessage="Selamat datang di Asterfall!";sfx("door", ToneGenerator.TONE_PROP_ACK)}
+        when(screen) {
+            "MAIN" -> when {
+                hit(52f,145f,390f,49f) -> if(playerName.isNotBlank()){screen="CITY";x=745f;y=385f;gemmaX=700f;gemmaY=410f;moveX=0f;moveY=0f;cityMessage="Selamat datang di Asterfall, "+playerName;sfx("door",ToneGenerator.TONE_PROP_ACK)}else screen="CREATE"
+                hit(52f,207f,390f,46f) -> screen="CREATE"
+                hit(52f,270f,185f,44f) -> screen="CHARACTER"
+                hit(252f,270f,190f,44f) -> screen="INVENTORY"
+                hit(52f,326f,185f,44f) -> screen="SKILLS"
+                hit(252f,326f,190f,44f) -> screen="EQUIPMENT"
+                hit(52f,382f,185f,44f) -> screen="QUESTS"
+                hit(252f,382f,190f,44f) -> screen="SETTINGS"
+                hit(510f,326f,340f,52f) -> {screen="CITY";x=745f;y=385f;gemmaX=700f;gemmaY=410f;moveX=0f;moveY=0f;cityMessage="Selamat datang di Asterfall!";sfx("door",ToneGenerator.TONE_PROP_ACK)}
             }
             "CITY" -> when {
-                hit(30f,420f,150f,42f)->{cityMessage="Warga: Monster makin agresif di dalam hutan. Siapkan ramuan!";say(cityMessage,3f)}
-                hit(190f,420f,150f,42f)->{cityMessage="Pedagang: Ramuan dan bahan kerajinan akan tersedia di update berikutnya.";say(cityMessage,3f)}
-                hit(350f,420f,180f,42f)->{cityMessage="Pandai besi: Upgrade senjata dan armor bisa kamu beli dari menu Equipment.";screen="EQUIPMENT"}
-                hit(690f,475f,240f,45f)->{screen="GAME";x=470f;y=285f;gemmaX=425f;gemmaY=320f;moveX=0f;moveY=0f;say("🌀 Portal aktif! Selamat datang di Hutan Sunyi.",3f);sfx("door", ToneGenerator.TONE_PROP_ACK)}
-                hit(30f,475f,150f,42f)->{screen="MAIN";moveX=0f;moveY=0f}
+                hit(200f,420f,150f,42f) -> {cityMessage="Warga: Monster makin agresif di dalam hutan. Siapkan ramuan!";say(cityMessage,3f)}
+                hit(355f,420f,150f,42f) -> {cityMessage="Pedagang: Ramuan dan bahan kerajinan akan tersedia di update berikutnya.";say(cityMessage,3f)}
+                hit(510f,420f,180f,42f) -> {cityMessage="Pandai besi: Upgrade senjata dan armor bisa kamu beli dari menu Equipment.";screen="EQUIPMENT"}
+                hit(690f,475f,240f,45f) -> {screen="GAME";x=470f;y=285f;gemmaX=425f;gemmaY=320f;moveX=0f;moveY=0f;say("Portal aktif! Selamat datang di Hutan Sunyi.",3f);sfx("door",ToneGenerator.TONE_PROP_ACK)}
+                hit(200f,475f,150f,42f) -> {screen="MAIN";moveX=0f;moveY=0f}
             }
-            "CREATE" -> when{
-                hit(52f,158f,360f,46f)->showNameDialog()
-                hit(500f,151f,365f,46f)->{hero="Vanguard";maxHp=140f;damage=14f+(level-1)*2f;hp=min(hp,maxHp);save()}
-                hit(500f,209f,365f,46f)->{hero="Ranger";maxHp=110f;damage=18f+(level-1)*2f;hp=min(hp,maxHp);save()}
-                hit(500f,267f,365f,46f)->{hero="Mage";maxHp=90f;damage=14f+(level-1)*2f;hp=min(hp,maxHp);save()}
-                hit(52f,225f,360f,46f)->if(playerName.isNotBlank()){when(hero){"Vanguard"->{maxHp=140f;damage=14f+(level-1)*2f};"Ranger"->{maxHp=110f;damage=18f+(level-1)*2f};else->{maxHp=90f;damage=14f+(level-1)*2f}};hp=maxHp;save();screen="MAIN"}else showNameDialog()
-                hit(52f,285f,170f,43f)->screen="MAIN"
+            "CREATE" -> when {
+                hit(52f,145f,370f,46f) -> showNameDialog()
+                hit(500f,145f,380f,46f) -> {hero="Vanguard";maxHp=140f;damage=14f+(level-1)*2f;hp=min(hp,maxHp);save()}
+                hit(500f,207f,380f,46f) -> {hero="Ranger";maxHp=110f;damage=18f+(level-1)*2f;hp=min(hp,maxHp);save()}
+                hit(500f,269f,380f,46f) -> {hero="Mage";maxHp=90f;damage=14f+(level-1)*2f;hp=min(hp,maxHp);save()}
+                hit(52f,207f,370f,46f) -> if(playerName.isNotBlank()){when(hero){"Vanguard"->{maxHp=140f;damage=14f+(level-1)*2f};"Ranger"->{maxHp=110f;damage=18f+(level-1)*2f};else->{maxHp=90f;damage=14f+(level-1)*2f}};hp=maxHp;save();screen="MAIN"}else showNameDialog()
+                hit(52f,269f,200f,44f) -> screen="MAIN"
             }
-            "CHARACTER" -> when{hit(52f,330f,220f,44f)->screen="CREATE";hit(52f,390f,220f,43f)->screen="MAIN"}
-            "INVENTORY" -> when{
-                hit(52f,260f,260f,46f)->if(potions>0&&hp<maxHp){potions--;hp=min(maxHp,hp+45f);save();say("Ramuan digunakan: +45 HP",2f)}else say(if(potions==0)"Ramuan habis." else "HP masih penuh.")
-                hit(52f,330f,200f,43f)->screen="PAUSE"
+            "CHARACTER" -> when {hit(52f,382f,185f,44f)->screen="CREATE";hit(252f,382f,190f,44f)->screen="MAIN"}
+            "INVENTORY" -> when {
+                hit(52f,326f,245f,46f) -> if(potions>0&&hp<maxHp){potions--;hp=min(maxHp,hp+45f);save();say("Ramuan digunakan: +45 HP",2f)}else say(if(potions==0)"Ramuan habis." else "HP masih penuh.")
+                hit(52f,390f,190f,44f) -> screen="PAUSE"
             }
-            "SKILLS" -> when{
-                hit(52f,205f,350f,46f)->{val cost=skillLevel*45;if(skillLevel<5&&gold>=cost){gold-=cost;skillLevel++;save();say("Arc Slash naik ke Lv."+skillLevel)}else say("Gold kurang atau level maksimum.")}
-                hit(52f,355f,200f,43f)->screen="PAUSE"
+            "SKILLS" -> when {
+                hit(52f,258f,370f,46f) -> {val cost=skillLevel*45;if(skillLevel<5&&gold>=cost){gold-=cost;skillLevel++;save();say("Arc Slash naik ke Lv."+skillLevel)}else say("Gold kurang atau level maksimum.")}
+                hit(52f,382f,190f,44f) -> screen="PAUSE"
             }
-            "EQUIPMENT" -> when{
-                hit(52f,175f,350f,46f)->{val cost=(weaponLevel+1)*55;if(weaponLevel<5&&gold>=cost){gold-=cost;weaponLevel++;save();say("Senjata ditingkatkan.")}else say("Gold kurang atau level maksimum.")}
-                hit(52f,276f,350f,46f)->{val cost=(armorLevel+1)*50;if(armorLevel<5&&gold>=cost){gold-=cost;armorLevel++;save();say("Armor ditingkatkan.")}else say("Gold kurang atau level maksimum.")}
-                hit(52f,360f,200f,43f)->screen="PAUSE"
+            "EQUIPMENT" -> when {
+                hit(52f,183f,370f,44f) -> {val cost=(weaponLevel+1)*55;if(weaponLevel<5&&gold>=cost){gold-=cost;weaponLevel++;save();say("Senjata ditingkatkan.")}else say("Gold kurang atau level maksimum.")}
+                hit(52f,281f,370f,44f) -> {val cost=(armorLevel+1)*50;if(armorLevel<5&&gold>=cost){gold-=cost;armorLevel++;save();say("Armor ditingkatkan.")}else say("Gold kurang atau level maksimum.")}
+                hit(52f,382f,190f,44f) -> screen="PAUSE"
             }
-            "QUESTS" -> if(hit(52f,350f,200f,43f))screen="PAUSE"
-            "SETTINGS" -> if(hit(52f,270f,300f,46f))screen="MAIN"
-            "PAUSE" -> when{
-                hit(52f,150f,300f,46f)->screen="GAME";hit(52f,210f,300f,43f)->screen="CHARACTER"
-                hit(52f,265f,300f,43f)->screen="INVENTORY";hit(52f,320f,300f,43f)->screen="SKILLS"
-                hit(52f,375f,300f,43f)->screen="EQUIPMENT";hit(500f,375f,300f,43f)->screen="MAIN"
+            "QUESTS" -> if(hit(52f,382f,190f,44f))screen="PAUSE"
+            "SETTINGS" -> if(hit(52f,280f,320f,46f))screen="MAIN"
+            "PAUSE" -> when {
+                hit(52f,150f,370f,44f)->screen="GAME"
+                hit(52f,208f,180f,44f)->screen="CHARACTER"
+                hit(242f,208f,180f,44f)->screen="INVENTORY"
+                hit(52f,266f,180f,44f)->screen="SKILLS"
+                hit(242f,266f,180f,44f)->screen="EQUIPMENT"
+                hit(52f,324f,370f,44f)->screen="MAIN"
             }
         }
         save();invalidate()
