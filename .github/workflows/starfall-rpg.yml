@@ -45,6 +45,8 @@ jobs:
       - name: Prepare pinned low-memory llama.cpp engine
         run: ./scripts/prepare-engine.sh
         working-directory: native-sandev
+      - name: Improve native model-load diagnostics for Starfall
+        run: python3 starfall-rpg/scripts/patch-engine-loader.py
       - name: Fetch CC0 animated fantasy sprites
         run: |
           mkdir -p starfall-rpg/app/src/main/assets/graphics
