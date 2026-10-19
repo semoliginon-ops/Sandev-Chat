@@ -17,6 +17,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install required Android SDK platform and build tools
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - name: Fetch CC0 animated fantasy sprites
         run: |
           mkdir -p starfall-rpg/app/src/main/assets/graphics
