@@ -9,6 +9,7 @@
         android:usesCleartextTraffic="false">
         <activity
             android:name=".starfall.StarfallActivity"
+            android:theme="@android:style/Theme.Material.NoActionBar"
             android:screenOrientation="landscape"
             android:exported="false" />
         <activity
