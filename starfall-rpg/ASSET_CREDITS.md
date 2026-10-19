@@ -16,3 +16,12 @@ Bundled effects: footsteps, weapon slice, impact, and a book-opening cue used fo
 - **Kenney Sci-Fi Sounds** — CC0 1.0 Universal, used for varied projectile/magic shots and boss blasts. https://kenney.nl/assets/sci-fi-sounds
 - **Kenney Impact Sounds** — CC0 1.0 Universal, used for varied impacts and grass footsteps. https://kenney.nl/assets/impact-sounds
 - **User-provided area backgrounds** — copied from `asset starfall rpg/<area>/` into the app assets at build time. Original filenames are preserved. The forest backdrop is downsampled at runtime to limit memory use.
+
+
+## Additional shooter audio and biome art
+
+- **Kenney Sci-Fi Sounds** — CC0 1.0 Universal; varied laser shots and explosion sounds. https://kenney.nl/assets/sci-fi-sounds
+- **Kenney Impact Sounds** — CC0 1.0 Universal; varied impact effects. https://kenney.nl/assets/impact-sounds
+- **Kenney RPG Audio** — CC0 1.0 Universal; varied footstep sounds. https://kenney.nl/assets/rpg-audio
+- **User-provided biome backgrounds** — all supported image files from `asset starfall rpg/{forest,rawa,pantai,pegunungan,salju,gurun,vulkanik}/` are copied into app assets during the build, retaining original filenames.
+- **Biome presentation** — one downsampled backdrop is loaded at a time; the active biome advances every 30 defeats and uses lightweight region-specific particles. This keeps bitmap memory bounded on phones.

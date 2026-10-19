@@ -53,7 +53,9 @@ private class ForestGameView(context: Context) : View(context) {
     private var heroSheet: Bitmap? = null
     private var gemmaSheet: Bitmap? = null
     private var pigSheet: Bitmap? = null
-    private var forestBackdrop: Bitmap? = null
+    private var areaBackdrop: Bitmap? = null
+    private val areaKeys = listOf("forest", "rawa", "pantai", "pegunungan", "salju", "gurun", "vulkanik")
+    private val areaNames = listOf("Hutan", "Rawa", "Pantai", "Pegunungan", "Salju", "Gurun", "Vulkanik")
     private var footstepTimer = 0f
     private data class Effect(var x: Float, var y: Float, var tx: Float, var ty: Float, var life: Float, val kind: Int)
     private val effects = mutableListOf<Effect>()
@@ -105,30 +107,42 @@ private class ForestGameView(context: Context) : View(context) {
         try { context.assets.open("graphics/hero_samurai.png").use { heroSheet = BitmapFactory.decodeStream(it) } } catch (_: Exception) {}
         try { context.assets.open("graphics/gemma_ninja.png").use { gemmaSheet = BitmapFactory.decodeStream(it) } } catch (_: Exception) {}
         try { context.assets.open("graphics/pig.png").use { pigSheet = BitmapFactory.decodeStream(it) } } catch (_: Exception) {}
-        // Use one downsampled area backdrop to keep memory use modest on 6 GB phones.
-        try {
-            val candidates = context.assets.list("areas/forest").orEmpty()
-                .filter { it.endsWith(".jpg", true) || it.endsWith(".jpeg", true) || it.endsWith(".png", true) || it.endsWith(".webp", true) }
-                .sorted()
-            candidates.firstOrNull()?.let { file ->
-                val options = BitmapFactory.Options().apply { inSampleSize = 4 }
-                context.assets.open("areas/forest/$file").use { forestBackdrop = BitmapFactory.decodeStream(it, null, options) }
-            }
-        } catch (_: Exception) {}
+        refreshAreaBackdrop(force = true)
         listOf("step", "attack", "impact", "spell").forEach { name ->
             try { context.assets.openFd("audio/$name.ogg").use { afd -> soundIds[name] = soundPool.load(afd, 1) } } catch (_: Exception) {}
         }
         listOf(
             "laserSmall_000", "laserSmall_001", "laserSmall_002", "laserSmall_003", "laserSmall_004",
-            "laserRetro_000", "laserRetro_001", "laserRetro_002",
-            "laserLarge_000", "laserLarge_001",
+            "laserRetro_000", "laserRetro_001", "laserRetro_002", "laserRetro_003", "laserRetro_004",
+            "laserLarge_000", "laserLarge_001", "laserLarge_002",
             "explosionCrunch_000", "explosionCrunch_001", "explosionCrunch_002",
             "impactGeneric_light_000", "impactGeneric_light_001", "impactGeneric_light_002",
             "impactMetal_000", "impactMetal_001",
-            "footstep_grass_000", "footstep_grass_001", "footstep_grass_002", "footstep_grass_003", "footstep_grass_004"
+            "footstep00", "footstep01", "footstep02", "footstep03", "footstep04"
         ).forEach { name ->
             try { context.assets.openFd("audio/extra/$name.ogg").use { afd -> soundIds[name] = soundPool.load(afd, 1) } } catch (_: Exception) {}
         }
+    }
+
+    private fun refreshAreaBackdrop(force: Boolean = false) {
+        val next = (kills / 30).coerceIn(0, areaKeys.lastIndex)
+        if (!force && next == activeAreaIndex && areaBackdrop != null) return
+        activeAreaIndex = next
+        try {
+            val directory = "areas/${areaKeys[activeAreaIndex]}"
+            val candidates = context.assets.list(directory).orEmpty()
+                .filter { it.endsWith(".jpg", true) || it.endsWith(".jpeg", true) || it.endsWith(".png", true) || it.endsWith(".webp", true) }
+                .sorted()
+            val file = candidates.firstOrNull()
+            if (file != null) {
+                val options = BitmapFactory.Options().apply { inSampleSize = 4 }
+                context.assets.open("$directory/$file").use { stream ->
+                    val decoded = BitmapFactory.decodeStream(stream, null, options)
+                    areaBackdrop?.recycle()
+                    areaBackdrop = decoded
+                }
+            }
+        } catch (_: Exception) {}
     }
 
     private fun tickFootsteps(dt: Float) {
@@ -150,7 +164,7 @@ private class ForestGameView(context: Context) : View(context) {
     private fun sfx(asset: String, fallback: Int = ToneGenerator.TONE_PROP_BEEP) {
         try {
             val candidates = when (asset) {
-                "step" -> listOf("footstep_grass_000", "footstep_grass_001", "footstep_grass_002", "footstep_grass_003", "footstep_grass_004", "step")
+                "step" -> listOf("footstep00", "footstep01", "footstep02", "footstep03", "footstep04", "step")
                 "attack" -> listOf("laserSmall_000", "laserSmall_001", "laserSmall_002", "laserSmall_003", "laserSmall_004", "attack")
                 "spell" -> listOf("laserRetro_000", "laserRetro_001", "laserRetro_002", "laserLarge_000", "laserLarge_001", "spell")
                 "impact" -> listOf("impactGeneric_light_000", "impactGeneric_light_001", "impactGeneric_light_002", "impactMetal_000", "impactMetal_001", "impact")
@@ -280,8 +294,11 @@ private class ForestGameView(context: Context) : View(context) {
         if (!m.alive) return
         m.alive = false
         fx(m.x,m.y,m.x,m.y,4,0.55f); sfx(if (m.kind == 2) "boss" else "coins", ToneGenerator.TONE_PROP_ACK)
-        if (m.kind == 2) { kills++; return }
+        if (m.kind == 2) { kills++; refreshAreaBackdrop(); save(); return }
         kills++
+        val oldAreaIndex = activeAreaIndex
+        refreshAreaBackdrop()
+        if (activeAreaIndex != oldAreaIndex) say("Wilayah baru terbuka: "+areaNames[activeAreaIndex]+"!", 3f)
         if (m.kind == 1) { exp += 22; gold += random.nextInt(6, 11) }
         else { exp += 12; gold += random.nextInt(3, 7) }
         val roll = random.nextInt(100)
@@ -373,26 +390,48 @@ private class ForestGameView(context: Context) : View(context) {
             if ((tx * 3 + ty * 11) % 19 == 0) { paint.color = Color.rgb(62, 100, 57); c.drawRect(xx+4,yy+5,xx+7,yy+7,paint) }
             if ((tx * 13 + ty * 5) % 37 == 0) { paint.color = Color.rgb(48, 78, 48); c.drawRect(xx+10,yy+11,xx+13,yy+13,paint) }
         }
-        // The uploaded forest photo adds real depth beneath the pixel-art world.
-        // A dark tint keeps enemies and hero silhouettes readable over the image.
-        forestBackdrop?.let { bg ->
-            paint.shader = null; paint.alpha = 112; paint.isFilterBitmap = true
-            c.drawBitmap(bg, null, RectF(0f, 0f, 960f, 540f), paint)
+        // Use each uploaded biome backdrop without distorting portrait images.
+        areaBackdrop?.let { bg ->
+            val targetRatio = 960f / 540f
+            val sourceRatio = bg.width.toFloat() / bg.height.toFloat()
+            val sw: Int
+            val sh: Int
+            val sx: Int
+            val sy: Int
+            if (sourceRatio > targetRatio) {
+                sh = bg.height; sw = (bg.height * targetRatio).toInt().coerceAtMost(bg.width)
+                sx = (bg.width - sw) / 2; sy = 0
+            } else {
+                sw = bg.width; sh = (bg.width / targetRatio).toInt().coerceAtMost(bg.height)
+                sx = 0; sy = (bg.height - sh) / 2
+            }
+            paint.shader = null; paint.alpha = 205; paint.isFilterBitmap = true
+            c.drawBitmap(bg, android.graphics.Rect(sx, sy, sx + sw, sy + sh), RectF(0f, 0f, 960f, 540f), paint)
             paint.alpha = 255; paint.isFilterBitmap = false
-            paint.color = Color.argb(82, 8, 25, 17); c.drawRect(0f, 0f, 960f, 540f, paint)
+            paint.color = Color.argb(86, 7, 16, 25); c.drawRect(0f, 0f, 960f, 540f, paint)
         }
         if (rpgSheet != null) {
             for (gx in 0..14) for (gy in 0..7) {
                 if ((gx * 5 + gy * 3) % 4 == 0) drawSprite(c, rpgSheet, 0, 150, 16, 16, gx * 64f, gy * 64f, 64f, 64f)
             }
         }
-        trees.forEach { t ->
+        if (activeAreaIndex == 0 || activeAreaIndex == 1) trees.forEach { t ->
             paint.color = Color.argb(90,3,15,12); c.drawOval(RectF(t.left-9,t.bottom-3,t.right+12,t.bottom+15),paint)
             paint.color = Color.rgb(79,57,37); c.drawRoundRect(RectF(t.centerX()-8,t.centerY()-3,t.centerX()+9,t.bottom+10),4f,4f,paint)
             paint.shader=LinearGradient(t.left,t.top,t.right,t.bottom,Color.rgb(72,142,75),Color.rgb(18,63,43),Shader.TileMode.CLAMP); c.drawOval(RectF(t.left-7,t.top-7,t.right+7,t.bottom-3),paint); paint.shader=null
             paint.color = Color.rgb(56,126,61); c.drawOval(RectF(t.left+3,t.top+2,t.right-5,t.bottom-11),paint)
             paint.color = Color.rgb(103,170,80); c.drawCircle(t.left+16,t.top+15,5f,paint); c.drawCircle(t.left+29,t.top+24,4f,paint)
             if (urbanSheet != null) drawSprite(c, urbanSheet, 512, 134, 16, 32, t.left-10, t.top-15, 65f, 80f)
+        }
+        when (activeAreaIndex) {
+            1 -> repeat(18) { i -> val px = ((i * 137 + clock.toInt() * 3) % 940).toFloat() + 10f; val py = ((i * 71 + clock.toInt() * 5) % 500).toFloat() + 20f
+                paint.color = Color.argb(100, 178, 218, 106); c.drawCircle(px, py, 2.2f, paint) }
+            2 -> { paint.color = Color.argb(90, 174, 226, 239); repeat(8) { i -> val yy = 85f + i * 54f; c.drawLine(0f, yy + kotlin.math.sin(clock * 1.5f + i) * 5f, 960f, yy, paint) } }
+            3 -> { paint.color = Color.argb(120, 216, 220, 215); repeat(14) { i -> val px = ((i * 113 + 17) % 940).toFloat() + 10f; val py = ((i * 67 + 23) % 500).toFloat() + 20f; c.drawRect(px, py, px + 3f, py + 3f, paint) } }
+            4 -> { paint.color = Color.argb(180, 240, 248, 255); repeat(28) { i -> val px = ((i * 83 + (clock * (10 + i % 7)).toInt()) % 960).toFloat(); val py = ((i * 61 + (clock * (16 + i % 5)).toInt()) % 540).toFloat(); c.drawCircle(px, py, 1.5f + (i % 3), paint) } }
+            5 -> { paint.color = Color.argb(95, 255, 222, 148); repeat(18) { i -> val px = ((i * 97 + 31) % 940).toFloat() + 10f; val py = ((i * 59 + 13) % 500).toFloat() + 20f; c.drawRect(px, py, px + 3f, py + 2f, paint) } }
+            6 -> repeat(18) { i -> val px = ((i * 127 + (clock * (8 + i % 6)).toInt()) % 960).toFloat(); val py = 60f + ((i * 71 + (clock * (10 + i % 4)).toInt()) % 470).toFloat()
+                paint.color = Color.argb(165, 255, if (i % 2 == 0) 104 else 57, 38); c.drawCircle(px, py, 1.8f + (i % 2), paint) }
         }
         paint.color = Color.rgb(95,78,52); c.drawRect(430f,255f,520f,315f,paint)
         paint.color = Color.rgb(120,101,66); c.drawRect(442f,264f,508f,305f,paint)
@@ -522,7 +561,7 @@ private class ForestGameView(context: Context) : View(context) {
         paint.color=Color.rgb(82,112,91); c.drawRect(18f,15f,436f,18f,paint)
         text(c,"STARFALL RPG",24f,35f,15f,Color.rgb(242,218,158))
         text(c,(playerName.ifBlank{"Adventurer"}+" · "+hero).take(26),24f,52f,10f,Color.rgb(195,220,211))
-        text(c,"LV "+level,24f,69f,10f,Color.rgb(244,218,143)); text(c,"GOLD "+gold,91f,69f,10f,Color.rgb(244,218,143)); text(c,"KILL "+kills,178f,69f,10f)
+        text(c,"LV "+level,24f,69f,10f,Color.rgb(244,218,143)); text(c,"GOLD "+gold,91f,69f,10f,Color.rgb(244,218,143)); text(c,"KILL "+kills,178f,69f,10f); text(c,areaNames[activeAreaIndex].uppercase(),260f,69f,9f,Color.rgb(174,219,203))
         text(c,"HP",24f,87f,9f,Color.rgb(255,190,180)); bar(c,56f,78f,164f,11f,hp,maxHp,Color.rgb(209,61,65)); text(c,hp.toInt().toString()+"/"+maxHp.toInt(),226f,87f,9f)
         text(c,"MP",24f,103f,9f,Color.rgb(160,208,255)); bar(c,56f,94f,164f,11f,mana,maxMana,Color.rgb(52,132,230)); text(c,mana.toInt().toString()+"/"+maxMana.toInt(),226f,103f,9f)
         text(c,"GEMMA",276f,87f,9f,Color.rgb(230,183,255)); bar(c,326f,78f,92f,11f,gemmaHp,gemmaMaxHp,Color.rgb(173,91,209)); text(c,gemmaHp.toInt().toString()+"/"+gemmaMaxHp.toInt(),326f,103f,9f)
