@@ -69,6 +69,7 @@ private class ForestGameView(context: Context) : View(context) {
     private var x = 470f; private var y = 285f
     private var gemmaX = 425f; private var gemmaY = 320f
     private var hp = 100f; private var maxHp = 100f
+    private var mana = 100f; private var maxMana = 100f
     private var gemmaHp = 100f; private var gemmaMaxHp = 100f
     private var level = prefs.getInt("level", 1).coerceIn(1, 10)
     private var exp = prefs.getInt("exp", 0).coerceAtLeast(0)
@@ -161,6 +162,7 @@ private class ForestGameView(context: Context) : View(context) {
         attackTimer = max(0f, attackTimer - dt); gemmaTimer = max(0f, gemmaTimer - dt)
         dodgeCooldown = max(0f, dodgeCooldown - dt); dodgeTime = max(0f, dodgeTime - dt)
         skillCooldown = max(0f, skillCooldown - dt); invuln = max(0f, invuln - dt)
+        mana = min(maxMana, mana + dt * 4f)
 
         val speed = if (dodgeTime > 0f) 340f else 170f
         val nx = x + moveX * speed * dt; val ny = y + moveY * speed * dt
@@ -192,7 +194,7 @@ private class ForestGameView(context: Context) : View(context) {
                 val radius = if (m.kind == 2) 88f else 58f
                 if (dist(m.x, m.y, x, y) < radius && invuln <= 0f) {
                     hp -= max(1f, (if (m.kind == 2) 20f else if (m.kind == 1) 12f else 8f) - armorLevel*3f)
-                    hitFlash=0.22f; fx(x,y,m.x,m.y,3); sfx("impact", ToneGenerator.TONE_PROP_NACK)
+                    hitFlash=0.22f; fx(x,y,m.x,m.y,3); fx(x,y,x,y,6,0.22f); sfx("impact", ToneGenerator.TONE_PROP_NACK)
                     say("Kena serangan! Baca tanda lalu dodge.", 1.7f)
                 }
                 m.attack = if (m.kind == 2) 4f else if (m.kind == 1) 3f else 2.5f
@@ -204,7 +206,7 @@ private class ForestGameView(context: Context) : View(context) {
                 .minByOrNull { dist(it.x, it.y, x, y) }
             if (target != null) {
                 target.hp -= damage + weaponLevel*5f; attackTimer = 0.7f
-                fx(x,y,target.x,target.y,2); sfx("attack", ToneGenerator.TONE_PROP_BEEP)
+                fx(x,y,target.x,target.y,2); fx(target.x,target.y,target.x,target.y,5,0.28f); sfx("attack", ToneGenerator.TONE_PROP_BEEP)
                 if (target.hp <= 0f) defeat(target) else say("Serangan dasar mengenai target.", 0.65f)
             }
         }
@@ -392,7 +394,7 @@ private class ForestGameView(context: Context) : View(context) {
 
     private fun drawEffects(c: Canvas) {
         effects.forEach { e ->
-            val duration = if (e.kind == 1) 0.52f else if (e.kind == 4 || e.kind == 5) 0.55f else 0.32f
+            val duration = if (e.kind == 1) 0.52f else if (e.kind == 4 || e.kind == 5 || e.kind == 7) 0.55f else 0.32f
             val p = (1f - e.life / duration).coerceIn(0f, 1f)
             val alpha = (230f * (1f - p)).toInt().coerceIn(0, 230)
             when (e.kind) {
@@ -420,14 +422,25 @@ private class ForestGameView(context: Context) : View(context) {
                     c.drawLine(e.x-r*.65f,e.y+r*.65f,e.x+r*.65f,e.y-r*.65f,paint)
                     paint.strokeWidth=1f
                 }
-                5 -> { // readable pixel slash with a short cyan glint
-                    paint.color=Color.argb(alpha,56,208,240); paint.strokeWidth=7f
-                    c.drawLine(e.x-29f+20f*p,e.y+23f,e.x+25f-20f*p,e.y-27f,paint)
-                    paint.color=Color.argb(alpha,222,250,255); paint.strokeWidth=2.5f
-                    c.drawLine(e.x-25f+20f*p,e.y+19f,e.x+21f-20f*p,e.y-23f,paint)
-                    paint.color=Color.argb(alpha,255,255,220)
-                    c.drawRect(e.x-3f,e.y-5f,e.x+3f,e.y+1f,paint)
-                    paint.strokeWidth=1f
+                5 -> {
+                    paint.color=Color.argb(alpha,65,198,255); paint.strokeWidth=10f
+                    c.drawLine(e.x-31f+16f*p,e.y+25f,e.x+29f-16f*p,e.y-30f,paint)
+                    paint.color=Color.argb(alpha,240,251,255); paint.strokeWidth=3f
+                    c.drawLine(e.x-27f+16f*p,e.y+21f,e.x+25f-16f*p,e.y-26f,paint)
+                    paint.color=Color.argb(alpha,255,255,219); c.drawRect(e.x-4f,e.y-6f,e.x+4f,e.y+2f,paint); paint.strokeWidth=1f
+                }
+                6 -> {
+                    paint.color=Color.argb((alpha*0.7f).toInt(),255,244,197); c.drawRect(e.x-12f,e.y-12f,e.x+12f,e.y+12f,paint)
+                    paint.color=Color.argb(alpha,255,205,91); paint.strokeWidth=3f
+                    c.drawLine(e.x-22f,e.y,e.x-12f,e.y,paint); c.drawLine(e.x+12f,e.y,e.x+22f,e.y,paint)
+                    c.drawLine(e.x,e.y-22f,e.x,e.y-12f,paint); c.drawLine(e.x,e.y+12f,e.x,e.y+22f,paint); paint.strokeWidth=1f
+                }
+                7 -> {
+                    paint.color=Color.argb(alpha,74,194,255); paint.strokeWidth=8f
+                    val left=e.x-36f+12f*p; val right=e.x+36f-12f*p
+                    c.drawLine(left,e.y+17f,right-10f,e.y-10f,paint); c.drawLine(right-10f,e.y-10f,right,e.y-25f,paint)
+                    paint.color=Color.argb(alpha,245,252,255); paint.strokeWidth=2.5f
+                    c.drawLine(left+3f,e.y+13f,right-11f,e.y-10f,paint); c.drawLine(right-11f,e.y-10f,right-1f,e.y-22f,paint); paint.strokeWidth=1f
                 }
             }
         }
@@ -459,41 +472,34 @@ private class ForestGameView(context: Context) : View(context) {
     }
 
     private fun drawHud(c: Canvas) {
-        paint.color=Color.argb(225,14,25,27);c.drawRoundRect(RectF(12f,10f,410f,103f),8f,8f,paint)
-        text(c,"⭐ STARFALL RPG",24f,31f,16f,Color.rgb(236,220,165))
-        text(c,playerName.ifBlank { "Adventurer" }+" · "+hero,24f,49f,11f,Color.rgb(195,220,211))
-        text(c,"LV "+level+"  EXP "+exp+"/"+need(level)+"  GOLD "+gold,24f,67f,12f)
-        text(c,"PLAYER",24f,68f,10f);bar(c,78f,59f,145f,11f,hp,maxHp,Color.rgb(209,73,74))
-        text(c,"GEMMA",24f,84f,10f);bar(c,78f,75f,145f,10f,gemmaHp,gemmaMaxHp,Color.rgb(179,94,211))
-        text(c,"KILLS $kills",244f,69f,11f,Color.rgb(218,225,196))
-        text(c,"DODGE " + if (dodgeCooldown <= 0f) "READY" else "${dodgeCooldown.toInt()+1}",244f,84f,10f)
+        paint.color=Color.argb(238,9,18,22); c.drawRoundRect(RectF(12f,10f,442f,126f),7f,7f,paint)
+        paint.color=Color.rgb(82,112,91); c.drawRect(18f,15f,436f,18f,paint)
+        text(c,"STARFALL RPG",24f,35f,15f,Color.rgb(242,218,158))
+        text(c,(playerName.ifBlank{"Adventurer"}+" · "+hero).take(26),24f,52f,10f,Color.rgb(195,220,211))
+        text(c,"LV "+level,24f,69f,10f,Color.rgb(244,218,143)); text(c,"GOLD "+gold,91f,69f,10f,Color.rgb(244,218,143)); text(c,"KILL "+kills,178f,69f,10f)
+        text(c,"HP",24f,87f,9f,Color.rgb(255,190,180)); bar(c,56f,78f,164f,11f,hp,maxHp,Color.rgb(209,61,65)); text(c,hp.toInt().toString()+"/"+maxHp.toInt(),226f,87f,9f)
+        text(c,"MP",24f,103f,9f,Color.rgb(160,208,255)); bar(c,56f,94f,164f,11f,mana,maxMana,Color.rgb(52,132,230)); text(c,mana.toInt().toString()+"/"+maxMana.toInt(),226f,103f,9f)
+        text(c,"GEMMA",276f,87f,9f,Color.rgb(230,183,255)); bar(c,326f,78f,92f,11f,gemmaHp,gemmaMaxHp,Color.rgb(173,91,209)); text(c,gemmaHp.toInt().toString()+"/"+gemmaMaxHp.toInt(),326f,103f,9f)
+        paint.color=Color.argb(230,9,18,22); c.drawRoundRect(RectF(452f,52f,690f,96f),6f,6f,paint)
+        text(c,"EXP  "+exp+" / "+need(level),464f,68f,10f,Color.rgb(202,230,176)); bar(c,464f,75f,214f,13f,exp.toFloat(),need(level).toFloat(),Color.rgb(106,190,91))
+        text(c,"DODGE "+(if(dodgeCooldown<=0f)"READY" else (dodgeCooldown.toInt()+1).toString()+"s"),464f,90f,9f,Color.rgb(239,224,185))
         listOf("FOLLOW","ATTACK","GUARD","RANGE").forEachIndexed { i,cmd ->
             val bx=554f+i*96f
-            paint.color=Color.argb(90,0,0,0); c.drawRect(bx+2f,16f,bx+90f,48f,paint)
-            paint.color=if(command==cmd) Color.rgb(75,74,116) else Color.rgb(34,52,47)
-            c.drawRect(bx,12f,bx+88f,44f,paint)
-            paint.color=if(command==cmd) Color.rgb(165,151,218) else Color.rgb(103,137,103)
-            c.drawRect(bx+2f,14f,bx+86f,16f,paint)
+            paint.color=Color.argb(100,0,0,0); c.drawRect(bx+2f,16f,bx+90f,48f,paint)
+            paint.color=if(command==cmd)Color.rgb(75,74,116) else Color.rgb(34,52,47); c.drawRect(bx,12f,bx+88f,44f,paint)
+            paint.color=if(command==cmd)Color.rgb(165,151,218) else Color.rgb(103,137,103); c.drawRect(bx+2f,14f,bx+86f,16f,paint)
             paint.color=Color.rgb(211,190,139); paint.style=Paint.Style.STROKE; c.drawRect(bx+0.5f,12.5f,bx+87.5f,43.5f,paint); paint.style=Paint.Style.FILL
             val iconKind=when(cmd){"FOLLOW"->"follow";"ATTACK"->"attack";"GUARD"->"guard";else->"range"}
-            drawPixelIcon(c,iconKind,bx+16f,28f,Color.rgb(245,221,158))
-            text(c,cmd,bx+29f,33f,10f,Color.rgb(248,241,216))
+            drawPixelIcon(c,iconKind,bx+16f,28f,Color.rgb(245,221,158)); text(c,cmd,bx+29f,33f,10f,Color.rgb(248,241,216))
         }
-        if(messageTime>0f){paint.color=Color.argb(225,12,20,23);c.drawRoundRect(RectF(270f,470f,690f,510f),7f,7f,paint);text(c,message.take(54),284f,495f,12f,Color.rgb(255,235,189))}
-        paint.color=Color.argb(135,190,210,190);c.drawCircle(88f,445f,51f,paint)
-        paint.color=Color.argb(190,49,90,75);c.drawCircle(88f+moveX*20f,445f+moveY*20f,21f,paint);text(c,"MOVE",65f,510f,10f)
-        // Compact, crisp skill panels: same hit areas as the existing controls.
-        paint.color=Color.argb(110,0,0,0); c.drawRect(739f,416f,823f,486f,paint)
-        paint.color=Color.rgb(91,49,46); c.drawRect(736f,413f,820f,480f,paint)
-        paint.color=Color.rgb(167,88,72); c.drawRect(738f,415f,818f,417f,paint)
-        paint.color=Color.rgb(225,179,127); paint.style=Paint.Style.STROKE; c.drawRect(736.5f,413.5f,819.5f,479.5f,paint); paint.style=Paint.Style.FILL
+        if(messageTime>0f){paint.color=Color.argb(235,12,20,23);c.drawRoundRect(RectF(270f,470f,690f,510f),7f,7f,paint);text(c,message.take(54),284f,495f,12f,Color.rgb(255,235,189))}
+        paint.color=Color.argb(135,190,210,190);c.drawCircle(88f,445f,51f,paint); paint.color=Color.argb(190,49,90,75);c.drawCircle(88f+moveX*20f,445f+moveY*20f,21f,paint);text(c,"MOVE",65f,510f,10f)
+        paint.color=Color.argb(130,0,0,0); c.drawRect(739f,416f,823f,486f,paint); paint.color=Color.rgb(91,49,46); c.drawRect(736f,413f,820f,480f,paint)
+        paint.color=Color.rgb(167,88,72); c.drawRect(738f,415f,818f,417f,paint); paint.color=Color.rgb(225,179,127); paint.style=Paint.Style.STROKE; c.drawRect(736.5f,413.5f,819.5f,479.5f,paint); paint.style=Paint.Style.FILL
         drawPixelIcon(c,"dodge",778f,440f,Color.rgb(255,224,168)); text(c,"DODGE",754f,468f,10f,Color.rgb(255,242,218))
-        paint.color=Color.argb(110,0,0,0); c.drawRect(829f,416f,915f,486f,paint)
-        paint.color=Color.rgb(58,48,91); c.drawRect(826f,413f,912f,480f,paint)
-        paint.color=Color.rgb(113,91,171); c.drawRect(828f,415f,910f,417f,paint)
-        paint.color=Color.rgb(190,171,224); paint.style=Paint.Style.STROKE; c.drawRect(826.5f,413.5f,911.5f,479.5f,paint); paint.style=Paint.Style.FILL
-        drawPixelIcon(c,"skill",869f,440f,Color.rgb(198,230,255)); text(c,"ARC SLASH",840f,468f,9f,Color.rgb(246,239,255))
-        if(skillCooldown>0f) text(c,"${skillCooldown.toInt()+1}s",861f,422f,10f,Color.YELLOW)
+        paint.color=Color.argb(130,0,0,0); c.drawRect(829f,416f,915f,486f,paint); paint.color=Color.rgb(48,42,88); c.drawRect(826f,413f,912f,480f,paint)
+        paint.color=Color.rgb(113,91,171); c.drawRect(828f,415f,910f,417f,paint); paint.color=Color.rgb(190,171,224); paint.style=Paint.Style.STROKE; c.drawRect(826.5f,413.5f,911.5f,479.5f,paint); paint.style=Paint.Style.FILL
+        drawPixelIcon(c,"skill",869f,438f,Color.rgb(198,230,255)); text(c,"ARC SLASH",840f,462f,9f,Color.rgb(246,239,255)); text(c,if(skillCooldown>0f)(skillCooldown.toInt()+1).toString()+"s" else "MP 25",852f,474f,9f,Color.rgb(255,225,150))
         paint.color=Color.argb(225,18,30,34); c.drawRoundRect(RectF(884f,55f,948f,85f),6f,6f,paint); text(c,"MENU",895f,75f,11f,Color.rgb(255,230,172))
     }
 
@@ -696,6 +702,18 @@ private class ForestGameView(context: Context) : View(context) {
                 text(c, if (hero == "Vanguard") "HP 140  ·  damage seimbang" else if (hero == "Ranger") "HP 110  ·  damage lebih tinggi" else "HP 90  ·  skill area lebih kuat", 518f, 369f, 12f, Color.rgb(233, 212, 159))
                 text(c, "Pilihan kelas bisa diganti kapan saja.", 518f, 390f, 10f, Color.rgb(170, 194, 169))
             }
+            "SHOP" -> {
+                text(c,"TOKO PEDAGANG",54f,132f,12f,Color.rgb(186,207,169))
+                text(c,"Gold tersedia: "+gold,56f,165f,14f,Color.rgb(244,218,143))
+                menuButton(c,"BELI RAMUAN HP · 20 GOLD",52f,183f,370f,46f,gold>=20)
+                menuButton(c,"BELI MATERIAL · 35 GOLD",52f,245f,370f,46f,gold>=35)
+                menuButton(c,"KEMBALI KE KOTA",52f,382f,220f,44f)
+                text(c,"INVENTORY",500f,151f,12f,Color.rgb(186,207,169))
+                text(c,"Ramuan HP: "+potions,500f,184f,13f,Color.rgb(230,155,147))
+                text(c,"Material: "+materials,500f,210f,13f,Color.rgb(190,214,167))
+                text(c,"Ramuan memulihkan 45 HP.",500f,252f,11f)
+                text(c,"Material untuk crafting pada update berikutnya.",500f,276f,10f)
+            }
             "CHARACTER" -> {
                 text(c, "STATUS KARAKTER", 54f, 132f, 12f, Color.rgb(186, 207, 169))
                 text(c, "Nama: " + playerName.ifBlank { "Belum dibuat" }, 56f, 160f, 14f)
@@ -808,7 +826,7 @@ private class ForestGameView(context: Context) : View(context) {
             }
             "CITY" -> when {
                 hit(200f,420f,150f,42f) -> {cityMessage="Warga: Monster makin agresif di dalam hutan. Siapkan ramuan!";say(cityMessage,3f)}
-                hit(355f,420f,150f,42f) -> {cityMessage="Pedagang: Ramuan dan bahan kerajinan akan tersedia di update berikutnya.";say(cityMessage,3f)}
+                hit(355f,420f,150f,42f) -> {screen="SHOP";moveX=0f;moveY=0f}
                 hit(510f,420f,180f,42f) -> {cityMessage="Pandai besi: Upgrade senjata dan armor bisa kamu beli dari menu Equipment.";screen="EQUIPMENT"}
                 hit(690f,475f,240f,45f) -> {screen="GAME";x=470f;y=285f;gemmaX=425f;gemmaY=320f;moveX=0f;moveY=0f;say("Portal aktif! Selamat datang di Hutan Sunyi.",3f);sfx("door",ToneGenerator.TONE_PROP_ACK)}
                 hit(200f,475f,150f,42f) -> {screen="MAIN";moveX=0f;moveY=0f}
@@ -820,6 +838,11 @@ private class ForestGameView(context: Context) : View(context) {
                 hit(500f,269f,380f,46f) -> {hero="Mage";maxHp=90f;damage=14f+(level-1)*2f;hp=min(hp,maxHp);save()}
                 hit(52f,207f,370f,46f) -> if(playerName.isNotBlank()){when(hero){"Vanguard"->{maxHp=140f;damage=14f+(level-1)*2f};"Ranger"->{maxHp=110f;damage=18f+(level-1)*2f};else->{maxHp=90f;damage=14f+(level-1)*2f}};hp=maxHp;save();screen="MAIN"}else showNameDialog()
                 hit(52f,269f,200f,44f) -> screen="MAIN"
+            }
+            "SHOP" -> when {
+                hit(52f,183f,370f,46f) -> if(gold>=20){gold-=20;potions++;save();say("Ramuan HP dibeli.",2f)}else say("Gold tidak cukup.")
+                hit(52f,245f,370f,46f) -> if(gold>=35){gold-=35;materials++;save();say("Material dibeli.",2f)}else say("Gold tidak cukup.")
+                hit(52f,382f,220f,44f) -> screen="CITY"
             }
             "CHARACTER" -> when {hit(52f,382f,185f,44f)->screen="CREATE";hit(252f,382f,190f,44f)->screen="MAIN"}
             "INVENTORY" -> when {
@@ -861,11 +884,19 @@ private class ForestGameView(context: Context) : View(context) {
                 } else if(tx in 735f..825f && ty>390f && dodgeCooldown<=0f){
                     dodgeTime=0.22f;dodgeCooldown=3f;invuln=0.28f;say("Dodge!",0.7f)
                 } else if(tx>825f && ty>390f && skillCooldown<=0f){
-                    skillCooldown=6f
-                    fx(x,y,x,y,5,0.45f);screenShake=max(screenShake,0.10f);sfx("spell", ToneGenerator.TONE_PROP_BEEP)
-                    val skillDamage = 42f + (skillLevel-1)*18f + weaponLevel*5f
-                    mobs.filter{it.alive && dist(it.x,it.y,x,y)<105f}.toList().forEach{it.hp-=skillDamage;if(it.hp<=0f)defeat(it)}
-                    say("ARC SLASH Lv."+skillLevel+"!",1f)
+                    if(mana<25f) say("Mana belum cukup untuk Arc Slash.",1f)
+                    else {
+                        mana-=25f; skillCooldown=6f; screenShake=max(screenShake,0.20f); hitFlash=0.12f
+                        val targets=mobs.filter{it.alive && dist(it.x,it.y,x,y)<132f}.toList()
+                        fx(x+12f,y-8f,x+12f,y-8f,5,0.42f); fx(x+5f,y-12f,x+5f,y-12f,7,0.40f); fx(x,y,x,y,6,0.25f)
+                        targets.forEach { m ->
+                            m.hp-=42f+(skillLevel-1)*18f+weaponLevel*5f
+                            fx(m.x,m.y,m.x,m.y,5,0.42f); fx(m.x,m.y,m.x,m.y,2,0.30f); fx(m.x,m.y,m.x,m.y,6,0.26f)
+                            if(m.hp<=0f)defeat(m)
+                        }
+                        sfx("spell",ToneGenerator.TONE_PROP_BEEP)
+                        say(if(targets.isEmpty())"ARC SLASH! Tidak ada musuh dalam jangkauan." else "ARC SLASH! "+targets.size+" musuh terkena.",1.2f)
+                    }
                 };return true
             }
             MotionEvent.ACTION_MOVE -> {
