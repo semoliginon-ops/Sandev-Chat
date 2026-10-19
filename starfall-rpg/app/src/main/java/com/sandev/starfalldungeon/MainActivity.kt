@@ -43,7 +43,8 @@ class MainActivity : Activity() {
 private data class Mob(
     var x: Float, var y: Float, val kind: Int, var hp: Float, val maxHp: Float,
     var attack: Float = 1f, var windup: Float = 0f, var alive: Boolean = true,
-    var hitEmoji: String = "", var hitEmojiTime: Float = 0f
+    var hitEmoji: String = "", var hitEmojiTime: Float = 0f,
+    var displayEmoji: String = ""
 )
 
 private class ForestGameView(context: Context) : View(context) {
@@ -91,8 +92,9 @@ private class ForestGameView(context: Context) : View(context) {
     private var damage = 14f + (level - 1) * 2f
     private var attackTimer = 0f; private var gemmaTimer = 0f
     private var gemmaChat = "Ayo, kita pasti bisa! 💖"
-    private var gemmaChatTime = 3.5f
-    private var gemmaChatTimer = 11f
+    private var pendingGemmaChat: String? = null
+    private var gemmaChatTime = 0f
+    private var gemmaChatTimer = 5f
     private var dodgeCooldown = 0f; private var dodgeTime = 0f; private var invuln = 0f
     private var skillCooldown = 0f; private var moveX = 0f; private var moveY = 0f
     private var stickId = -1; private var command = "FOLLOW"
@@ -190,8 +192,8 @@ private class ForestGameView(context: Context) : View(context) {
     }
     private fun need(l: Int): Int = (100 + l * l * 18).coerceAtMost(65000)
     private fun say(s: String, t: Float = 2f) { message = s; messageTime = t }
-    private fun gemmaTalk(s: String, t: Float = 3.2f) { gemmaChat = s; gemmaChatTime = t }
-    private fun gemmaRandomTalk() { val lines = listOf("Gaskeun! Kita kompak! 💖", "Hehe, monster itu pede banget! 😂", "Jangan lupa dodge, kapten! ✨", "Aku jagain dari sini! 🌟", "Waduh, mukanya serem... dikit! 😳", "Serang terus! Kamu hebat! 💪", "Tim kita nggak gampang tumbang! 💜", "Monster: kok aku lagi? WKWK! 🤣", "Fokus, fokus... habis ini istirahat! 😆", "Aku kasih dukungan magis! ✨"); gemmaTalk(lines.random(random)) }
+    private fun gemmaTalk(s: String, t: Float = 3.2f) { pendingGemmaChat = s }
+    private fun gemmaRandomTalk(): String { val lines = listOf("Gaskeun! Kita kompak! 💖", "Hehe, monster itu pede banget! 😂", "Jangan lupa dodge, kapten! ✨", "Aku jagain dari sini! 🌟", "Waduh, mukanya serem... dikit! 😳", "Serang terus! Kamu hebat! 💪", "Tim kita nggak gampang tumbang! 💜", "Monster: kok aku lagi? WKWK! 🤣", "Fokus, fokus... habis ini istirahat! 😆", "Aku kasih dukungan magis! ✨"); return lines.random(random) }
     private fun performPlayerAttack() {
         if (attackTimer > 0f) { say("Serangan masih cooldown sebentar!", 0.7f); return }
         val target = mobs.filter { it.alive && dist(it.x, it.y, x, y) < 125f }.minByOrNull { dist(it.x, it.y, x, y) }
@@ -348,7 +350,10 @@ private class ForestGameView(context: Context) : View(context) {
             tries++
         } while (tries < 18 && (dist(sx, sy, x, y) < 190f || cityBlocked(sx, sy)))
         val max = if (kind == 1) 85f else if (kind == 2) 1200f else 50f
-        mobs.add(Mob(sx, sy, kind, max, max, 1.2f + random.nextFloat()))
+        val mob = Mob(sx, sy, kind, max, max, 1.2f + random.nextFloat())
+        val mobSet = regionMobEmoji[((campaignStage - 1) / 10).coerceIn(0, regionMobEmoji.lastIndex)]
+        mob.displayEmoji = if (kind == 2) "👹" else mobSet.random(random)
+        mobs.add(mob)
     }
 
     private fun update(dt: Float) {
@@ -361,7 +366,12 @@ private class ForestGameView(context: Context) : View(context) {
         mobs.forEach { it.hitEmojiTime = max(0f, it.hitEmojiTime - dt); if (it.hitEmojiTime <= 0f) it.hitEmoji = "" }
         messageTime = max(0f, messageTime - dt)
         gemmaChatTime = max(0f, gemmaChatTime - dt); gemmaChatTimer -= dt
-        if (gemmaChatTimer <= 0f) { gemmaRandomTalk(); gemmaChatTimer = 12f + random.nextFloat() * 10f }
+        if (gemmaChatTimer <= 0f) {
+            gemmaChat = pendingGemmaChat ?: gemmaRandomTalk()
+            pendingGemmaChat = null
+            gemmaChatTime = 3.4f
+            gemmaChatTimer = 5f
+        }
         attackTimer = max(0f, attackTimer - dt); gemmaTimer = max(0f, gemmaTimer - dt)
         dodgeCooldown = max(0f, dodgeCooldown - dt); dodgeTime = max(0f, dodgeTime - dt)
         skillCooldown = max(0f, skillCooldown - dt); invuln = max(0f, invuln - dt)
@@ -426,7 +436,8 @@ private class ForestGameView(context: Context) : View(context) {
             bossSpawned = true
             val elite = campaignStage % 10 == 0
             val bossHp = if (elite) 5200f + campaignStage * 420f else 950f + campaignStage * 135f
-            mobs.add(Mob(810f, 365f, 2, bossHp, bossHp, if (elite) 3.8f else 2.4f))
+            val bossEmoji = if (elite) eliteBossEmoji[(campaignStage / 10 - 1).coerceIn(0, 4)] else stageBossEmoji[(campaignStage - 1) % stageBossEmoji.size]
+            mobs.add(Mob(810f, 365f, 2, bossHp, bossHp, if (elite) 3.8f else 2.4f, displayEmoji = bossEmoji))
             val bossName = if (elite) "ELITE BOSS " + eliteBossEmoji[(campaignStage / 10 - 1).coerceIn(0, 4)] else "BOS " + stageBossEmoji[(campaignStage - 1) % stageBossEmoji.size]
             say("$bossName · STAGE $campaignStage MUNCUL!", 5f)
             gemmaTalk(if (elite) "ELITE BOSS?! Ini bukan latihan lagi! Kita pasti bisa! 😤💖" else "Bosnya datang! Dodge yang tepat, ya! ⚔️", 4f)
@@ -615,38 +626,41 @@ private class ForestGameView(context: Context) : View(context) {
         paint.color = Color.rgb(95,78,52); c.drawRect(430f,255f,520f,315f,paint)
         paint.color = Color.rgb(120,101,66); c.drawRect(442f,264f,508f,305f,paint)
     }
+    private fun drawEmoji(c: Canvas, emoji: String, cx: Float, cy: Float, size: Float) {
+        paint.shader = null
+        paint.style = Paint.Style.FILL
+        paint.textAlign = Paint.Align.CENTER
+        paint.typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
+        paint.textSize = size
+        paint.setShadowLayer(5f, 0f, 3f, Color.BLACK)
+        paint.color = Color.WHITE
+        c.drawText(emoji, cx, cy + size * 0.34f, paint)
+        paint.clearShadowLayer()
+        paint.textAlign = Paint.Align.LEFT
+        paint.typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
+    }
+
     private fun drawCharacters(c: Canvas) {
         mobs.filter { it.alive }.forEach { m ->
             if (m.kind == 2) {
-                paint.color = Color.argb(105,0,0,0); c.drawOval(RectF(m.x-39,m.y+17,m.x+40,m.y+34),paint)
-                paint.color = Color.rgb(65,43,31); c.drawRoundRect(RectF(m.x-24,m.y-24,m.x+24,m.y+28),10f,10f,paint)
-                paint.color = Color.rgb(91,72,42); c.drawRoundRect(RectF(m.x-32,m.y-32,m.x+32,m.y+20),12f,12f,paint)
-                paint.color = Color.rgb(54,83,42); c.drawOval(RectF(m.x-37,m.y-39,m.x+2,m.y+4),paint); c.drawOval(RectF(m.x-4,m.y-43,m.x+37,m.y+3),paint)
-                paint.color = Color.rgb(135,180,76); c.drawCircle(m.x-11,m.y-13,4f,paint); c.drawCircle(m.x+12,m.y-13,4f,paint)
-                paint.color = Color.rgb(235,202,104); c.drawCircle(m.x-11,m.y-13,1.8f,paint); c.drawCircle(m.x+12,m.y-13,1.8f,paint)
-                paint.color = Color.rgb(110,70,39); paint.strokeWidth = 6f; c.drawLine(m.x-22,m.y-24,m.x-39,m.y-40,paint); c.drawLine(m.x+22,m.y-24,m.x+39,m.y-40,paint); paint.strokeWidth = 1f
-                bar(c,m.x-36,m.y-50,72f,7f,m.hp,m.maxHp,Color.rgb(210,64,64))
                 val elite = campaignStage % 10 == 0
-                text(c,if (elite) "ELITE STAGE $campaignStage" else "BOSS STAGE $campaignStage",m.x-48,m.y-57,9f,Color.rgb(255,220,140))
-                text(c,if (elite) eliteBossEmoji[(campaignStage / 10 - 1).coerceIn(0,4)] else stageBossEmoji[(campaignStage - 1) % stageBossEmoji.size],m.x-24f,m.y+10f,40f,Color.WHITE)
-                if (m.hitEmojiTime > 0f && m.hitEmoji.isNotBlank()) text(c,m.hitEmoji,m.x-12f,m.y-62f,22f,Color.WHITE)
-                if (m.windup > 0f) text(c,"DODGE!",m.x-24,m.y+45,12f,Color.YELLOW)
+                paint.color = Color.argb(125,0,0,0); c.drawOval(RectF(m.x-68,m.y+27,m.x+68,m.y+48),paint)
+                bar(c,m.x-55,m.y-78,110f,9f,m.hp,m.maxHp,Color.rgb(210,64,64))
+                text(c,if (elite) "ELITE STAGE $campaignStage" else "BOSS STAGE $campaignStage",m.x-65,m.y-88,12f,Color.rgb(255,220,140))
+                drawEmoji(c, m.displayEmoji.ifBlank { if (elite) eliteBossEmoji[(campaignStage / 10 - 1).coerceIn(0,4)] else stageBossEmoji[(campaignStage - 1) % stageBossEmoji.size] }, m.x, m.y-6f, 104f)
+                if (m.hitEmojiTime > 0f && m.hitEmoji.isNotBlank()) drawEmoji(c,m.hitEmoji,m.x,m.y-6f,116f)
+                if (m.windup > 0f) text(c,"DODGE!",m.x-24,m.y+58,14f,Color.YELLOW)
             } else {
-                paint.color = Color.argb(95,0,0,0); c.drawOval(RectF(m.x-19,m.y+6,m.x+20,m.y+17),paint)
-                val mobSize = if (m.kind == 1) 39f else 34f
-                if (pigSheet != null) {
-                    paint.shader = null; paint.alpha = 255; paint.isFilterBitmap = false
-                    c.drawBitmap(pigSheet!!, null, RectF(m.x-mobSize/2f,m.y-mobSize+5f,m.x+mobSize/2f,m.y+5f), paint)
+                paint.color = Color.argb(110,0,0,0); c.drawOval(RectF(m.x-37,m.y+16,m.x+37,m.y+29),paint)
+                bar(c,m.x-31,m.y-51,62f,7f,m.hp,m.maxHp,Color.rgb(207,70,65))
+                if (m.hitEmojiTime > 0f && m.hitEmoji.isNotBlank()) {
+                    // Full-cover hit/skill emote: intentionally hides the base monster completely.
+                    drawEmoji(c, m.hitEmoji, m.x, m.y-8f, 76f)
                 } else {
-                    paint.color = if (m.kind == 1) Color.rgb(113,100,91) else Color.rgb(110,176,92)
-                    c.drawOval(RectF(m.x-16,m.y-25,m.x+16,m.y+8),paint)
-                    paint.color = Color.rgb(240,218,157); c.drawCircle(m.x-6,m.y-12,2.5f,paint); c.drawCircle(m.x+6,m.y-12,2.5f,paint)
+                    // One stable, oversized regional monster emote replaces the sprite underneath.
+                    drawEmoji(c, m.displayEmoji.ifBlank { "👾" }, m.x, m.y-8f, 66f)
                 }
-                bar(c,m.x-19,m.y-28,38f,5f,m.hp,m.maxHp,Color.rgb(207,70,65))
-                val mobSet = regionMobEmoji[(campaignStage - 1) / 10]
-                text(c, mobSet[((m.x.toInt() / 37) + m.kind) % mobSet.size], m.x-12f, m.y+2f, 23f, Color.WHITE)
-                if (m.hitEmojiTime > 0f && m.hitEmoji.isNotBlank()) text(c,m.hitEmoji,m.x-12f,m.y-37f,19f,Color.WHITE)
-                if (m.windup > 0f) text(c,"!",m.x-3,m.y-32,16f,Color.YELLOW)
+                if (m.windup > 0f) text(c,"!",m.x-3,m.y-53,20f,Color.YELLOW)
             }
         }
         paint.color = Color.argb(80,0,0,0); c.drawOval(RectF(gemmaX-18,gemmaY+4,gemmaX+19,gemmaY+15),paint)
@@ -655,12 +669,27 @@ private class ForestGameView(context: Context) : View(context) {
         text(c,"GEMMA",gemmaX-23,gemmaY-49,9f,Color.rgb(235,202,255))
         text(c,"✦",gemmaX+13,gemmaY-35+kotlin.math.sin(clock*4f)*3f,12f,Color.rgb(168,224,255))
         if (gemmaChatTime > 0f) {
-            val bubbleW = 210f; val bubbleH = 43f
-            val bx = (gemmaX + 22f).coerceIn(8f, 742f); val by = (gemmaY - 102f).coerceIn(56f, 420f)
-            paint.color = Color.argb(238, 250, 247, 231); c.drawRoundRect(RectF(bx, by, bx + bubbleW, by + bubbleH), 10f, 10f, paint)
-            paint.color = Color.rgb(128, 91, 158); paint.style = Paint.Style.STROKE; paint.strokeWidth = 2f
-            c.drawRoundRect(RectF(bx, by, bx + bubbleW, by + bubbleH), 10f, 10f, paint); paint.style = Paint.Style.FILL
-            text(c, gemmaChat.take(31), bx + 9f, by + 17f, 10f, Color.rgb(54, 43, 65)); text(c, gemmaChat.drop(31).take(31), bx + 9f, by + 32f, 10f, Color.rgb(54, 43, 65))
+            val bubbleW = 278f; val bubbleH = 58f
+            val bx = (gemmaX + 24f).coerceIn(8f, 674f)
+            val by = (gemmaY - 112f).coerceIn(58f, 408f)
+            paint.setShadowLayer(6f, 0f, 2f, Color.BLACK)
+            paint.color = Color.rgb(255, 253, 244)
+            c.drawRoundRect(RectF(bx, by, bx + bubbleW, by + bubbleH), 12f, 12f, paint)
+            paint.clearShadowLayer()
+            paint.color = Color.rgb(103, 66, 139); paint.style = Paint.Style.STROKE; paint.strokeWidth = 2.5f
+            c.drawRoundRect(RectF(bx, by, bx + bubbleW, by + bubbleH), 12f, 12f, paint); paint.style = Paint.Style.FILL
+            paint.typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
+            paint.textSize = 15f; paint.textAlign = Paint.Align.LEFT; paint.color = Color.rgb(38, 29, 48)
+            val words = gemmaChat.split(" ")
+            var line1 = ""; var line2 = ""
+            words.forEach { word ->
+                val candidate = if (line1.isEmpty()) word else "$line1 $word"
+                if (paint.measureText(candidate) <= bubbleW - 20f && line2.isEmpty()) line1 = candidate
+                else line2 = if (line2.isEmpty()) word else "$line2 $word"
+            }
+            c.drawText(line1, bx + 10f, by + 23f, paint)
+            c.drawText(line2, bx + 10f, by + 44f, paint)
+            paint.textAlign = Paint.Align.LEFT
         }
         if (invuln <= 0f || (clock * 12f).toInt() % 2 == 0) {
             paint.color=Color.argb(80,0,0,0); c.drawOval(RectF(x-17,y+6,x+18,y+17),paint)
