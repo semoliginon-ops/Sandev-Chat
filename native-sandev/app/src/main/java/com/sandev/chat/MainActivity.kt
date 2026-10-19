@@ -1192,6 +1192,9 @@ class MainActivity : AppCompatActivity() {
                     settleBlackjackRound()
                     renderPage()
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // User requested recovery; don't let cancellation settle the round or apply a fallback move.
+                throw e
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     blackjackMessage = "AI mengalami kendala: " + (e.message ?: e.javaClass.simpleName)
@@ -1253,6 +1256,9 @@ class MainActivity : AppCompatActivity() {
                     blackjackMessage = if (blackjackRoundActive && blackjackPlayerTurn) "Giliranmu. Draw satu kartu atau Stand untuk menyerahkan giliran." else if (blackjackRoundActive) "Ronde berlangsung. Naya akan mengambil keputusan saat gilirannya." else "Siap untuk ronde berikutnya."
                     renderPage()
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Recovery owns the next step; avoid posting a fake error bubble on cancellation.
+                throw e
             } catch (_: Exception) {
                 withContext(Dispatchers.Main) {
                     showBlackjackBubble("Maaf, aku kepeleset sebentar 😅 Coba bilang lagi, ya!")
