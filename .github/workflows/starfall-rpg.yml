@@ -17,10 +17,20 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-      - name: Install required Android SDK platform and build tools
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Configure preinstalled Android SDK
+        shell: bash
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort -V | tail -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::Android SDK command-line tools were not found under $SDK_ROOT/cmdline-tools"
+            exit 1
+          fi
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0"
       - name: Fetch CC0 animated fantasy sprites
         run: |
           mkdir -p starfall-rpg/app/src/main/assets/graphics
@@ -49,7 +59,7 @@ jobs:
             curl -fL --retry 2 "$base/impact-sounds/$file.ogg" -o "starfall-rpg/app/src/main/assets/audio/extra/$file.ogg" || echo "Optional sound unavailable: $file"
           done
           for file in impactMetal_000 impactMetal_001; do
-            curl -fL --retry 3 "$base/sci-fi-sounds/$file.ogg" -o "starfall-rpg/app/src/main/assets/audio/extra/$file.ogg"
+            curl -fL --retry 3 "$base/sci-fi-sounds/$file.ogg" -o "starfall-rpg/app/src/main/assets/audio/extra/$file.ogg" || echo "Optional sound unavailable: $file"
           done
           for file in footstep00 footstep01 footstep02 footstep03 footstep04; do
             curl -fL --retry 2 "https://raw.githubusercontent.com/Mcamento8/open-game-sfx-index/main/audio/rpg-audio/$file.ogg" -o "starfall-rpg/app/src/main/assets/audio/extra/$file.ogg" || echo "Optional sound unavailable: $file"
