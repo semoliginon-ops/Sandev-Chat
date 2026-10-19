@@ -193,7 +193,7 @@ private class ForestGameView(context: Context) : View(context) {
         var sx = 48f; var sy = 150f; var tries = 0
         do {
             sx = if (random.nextBoolean()) 48f else 912f
-            sy = 145f + random.nextFloat() * 285f
+            sy = 180f + random.nextFloat() * 245f
             tries++
         } while (tries < 18 && (dist(sx, sy, x, y) < 190f || cityBlocked(sx, sy)))
         val max = if (kind == 1) 85f else if (kind == 2) 1200f else 50f
@@ -621,7 +621,7 @@ private class ForestGameView(context: Context) : View(context) {
     }
 
     private fun cityBlocked(ax: Float, ay: Float): Boolean {
-        if (ax < 34f || ax > 926f || ay < 132f || ay > 454f) return true
+        if (ax < 34f || ax > 926f || ay < 175f || ay > 454f) return true
         val buildings = listOf(RectF(48f,168f,238f,320f), RectF(258f,168f,448f,320f), RectF(468f,168f,658f,320f))
         return buildings.any { it.contains(ax, ay) }
     }
