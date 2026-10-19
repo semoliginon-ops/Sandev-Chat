@@ -5,6 +5,7 @@ on:
     branches: [game/starfall-rpg-prototype, game/asterfall-action-map]
     paths:
       - 'starfall-rpg/**'
+      - '.github/workflows/starfall-rpg.yml'
 permissions:
   contents: read
 jobs:
