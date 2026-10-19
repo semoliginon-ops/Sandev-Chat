@@ -28,7 +28,7 @@ jobs:
           mkdir -p starfall-rpg/app/src/main/assets/areas
           for area in forest rawa pantai pegunungan salju gurun vulkanik; do
             mkdir -p "starfall-rpg/app/src/main/assets/areas/$area"
-            find "asset starfall rpg/$area" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \\) -exec cp {} "starfall-rpg/app/src/main/assets/areas/$area/" \;
+            find "asset starfall rpg/$area" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) -exec cp {} "starfall-rpg/app/src/main/assets/areas/$area/" \;
           done
       - name: Fetch extra CC0 shooter and impact sound variants
         run: |
