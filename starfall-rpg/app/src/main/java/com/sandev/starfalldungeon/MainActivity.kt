@@ -190,10 +190,10 @@ private class ForestGameView(context: Context) : View(context) {
     private fun blocked(ax: Float, ay: Float) = cityBlocked(ax, ay)
 
     private fun spawn(kind: Int) {
-        var sx = 48f; var sy = 150f; var tries = 0
+        var sx = 38f; var sy = 350f; var tries = 0
         do {
-            sx = if (random.nextBoolean()) 48f else 912f
-            sy = 180f + random.nextFloat() * 245f
+            sx = if (random.nextBoolean()) 38f else 922f
+            sy = 330f + random.nextFloat() * 105f
             tries++
         } while (tries < 18 && (dist(sx, sy, x, y) < 190f || cityBlocked(sx, sy)))
         val max = if (kind == 1) 85f else if (kind == 2) 1200f else 50f
@@ -367,7 +367,12 @@ private class ForestGameView(context: Context) : View(context) {
             update(0.016f)
             if (screenShake > 0f) canvas.translate((kotlin.math.sin(clock*95f)*screenShake*20f), (kotlin.math.cos(clock*81f)*screenShake*10f))
             drawCity(canvas); drawCharacters(canvas); drawEffects(canvas); drawHud(canvas)
-        } else if (screen == "CITY") { updateCity(0.016f); drawCity(canvas) } else drawMenu(canvas)
+        } else if (screen == "CITY") {
+            updateCity(0.016f)
+            drawCity(canvas)
+            drawCityCharacters(canvas)
+            drawCityHud(canvas)
+        } else drawMenu(canvas)
         canvas.restore(); postInvalidateDelayed(16L)
     }
     private fun drawForest(c: Canvas) {
@@ -622,7 +627,12 @@ private class ForestGameView(context: Context) : View(context) {
 
     private fun cityBlocked(ax: Float, ay: Float): Boolean {
         if (ax < 34f || ax > 926f || ay < 175f || ay > 454f) return true
-        val buildings = listOf(RectF(48f,168f,238f,320f), RectF(258f,168f,448f,320f), RectF(468f,168f,658f,320f))
+        // Building footprints include roof overhangs so the party cannot walk through walls.
+        val buildings = listOf(
+            RectF(33f, 168f, 223f, 340f),
+            RectF(267f, 172f, 453f, 340f),
+            RectF(501f, 168f, 691f, 340f)
+        )
         return buildings.any { it.contains(ax, ay) }
     }
 
@@ -694,6 +704,80 @@ private class ForestGameView(context: Context) : View(context) {
         paint.color=Color.rgb(92,60,37); c.drawRect(680f,343f,716f,371f,paint); c.drawRect(721f,350f,750f,374f,paint); paint.color=Color.rgb(171,120,65); c.drawRect(684f,347f,712f,366f,paint); c.drawRect(725f,354f,746f,369f,paint)
         paint.color=Color.rgb(70,45,30); c.drawRect(664f,286f,671f,337f,paint); paint.color=Color.rgb(155,100,47); c.drawRect(648f,284f,698f,301f,paint); text(c,"NOTICE",652f,296f,7f,Color.rgb(255,231,174))
         // Party, enemies, combat effects and controls are drawn above this map.
+    }
+
+
+    private fun drawCityCharacters(c: Canvas) {
+        fun citizen(cx: Float, feetY: Float, robe: Int, hair: Int, label: String) {
+            paint.color = Color.argb(90, 0, 0, 0)
+            c.drawOval(RectF(cx - 17f, feetY - 2f, cx + 18f, feetY + 7f), paint)
+            paint.color = robe
+            c.drawRoundRect(RectF(cx - 13f, feetY - 31f, cx + 13f, feetY - 5f), 4f, 4f, paint)
+            paint.color = Color.rgb(60, 43, 31)
+            c.drawRect(cx - 12f, feetY - 8f, cx - 4f, feetY, paint)
+            c.drawRect(cx + 4f, feetY - 8f, cx + 12f, feetY, paint)
+            paint.color = Color.rgb(224, 181, 133)
+            c.drawCircle(cx, feetY - 39f, 10f, paint)
+            paint.color = hair
+            c.drawArc(RectF(cx - 10f, feetY - 49f, cx + 10f, feetY - 31f), 180f, 180f, true, paint)
+            paint.color = Color.rgb(42, 35, 29)
+            c.drawCircle(cx - 3f, feetY - 39f, 1.3f, paint)
+            c.drawCircle(cx + 3f, feetY - 39f, 1.3f, paint)
+            paint.color = Color.rgb(211, 192, 151)
+            c.drawRect(cx - 15f, feetY - 30f, cx + 15f, feetY - 27f, paint)
+            text(c, label, cx - label.length * 2.6f, feetY - 55f, 8f, Color.rgb(255, 232, 177))
+        }
+        // Town NPCs exist only in the safe city. They are not drawn in the battle arena.
+        citizen(245f, 382f, Color.rgb(65, 102, 129), Color.rgb(65, 43, 29), "PENJAGA")
+        citizen(455f, 385f, Color.rgb(123, 83, 143), Color.rgb(211, 211, 203), "TABIB")
+        citizen(710f, 388f, Color.rgb(149, 102, 49), Color.rgb(77, 45, 28), "PEDAGANG")
+        citizen(850f, 360f, Color.rgb(90, 103, 72), Color.rgb(52, 37, 27), "PANDAI BESI")
+        paint.color = Color.argb(85, 0, 0, 0)
+        c.drawOval(RectF(gemmaX - 18f, gemmaY + 4f, gemmaX + 19f, gemmaY + 15f), paint)
+        val gemmaMoving = dist(gemmaX, gemmaY, x, y) > 54f
+        drawAnimatedCharacter(c, gemmaSheet, gemmaX, gemmaY + 5f, gemmaMoving,
+            facingColumn(x - gemmaX, y - gemmaY), 43f, 48f)
+        text(c, "GEMMA", gemmaX - 23f, gemmaY - 49f, 9f, Color.rgb(235, 202, 255))
+        paint.color = Color.argb(85, 0, 0, 0)
+        c.drawOval(RectF(x - 17f, y + 6f, x + 18f, y + 17f), paint)
+        val moving = kotlin.math.abs(moveX) + kotlin.math.abs(moveY) > 0.08f
+        drawAnimatedCharacter(c, heroSheet, x, y + 5f, moving,
+            if (moving) facingColumn(moveX, moveY) else 0, 47f, 51f)
+    }
+
+    private fun drawCityHud(c: Canvas) {
+        paint.color = Color.argb(232, 9, 18, 22)
+        c.drawRoundRect(RectF(12f, 10f, 430f, 94f), 7f, 7f, paint)
+        paint.color = Color.rgb(82, 112, 91)
+        c.drawRect(18f, 15f, 424f, 18f, paint)
+        text(c, "ASTERFALL CITY · SAFE ZONE", 24f, 37f, 15f, Color.rgb(242, 218, 158))
+        text(c, (playerName.ifBlank { "Adventurer" } + " · " + hero).take(30), 24f, 56f, 10f, Color.rgb(195, 220, 211))
+        text(c, "LV $level   GOLD $gold", 24f, 76f, 11f, Color.rgb(244, 218, 143))
+        paint.color = Color.argb(220, 9, 18, 22)
+        c.drawRoundRect(RectF(450f, 10f, 698f, 62f), 6f, 6f, paint)
+        text(c, "HP", 462f, 30f, 9f, Color.rgb(255, 190, 180))
+        bar(c, 490f, 21f, 190f, 11f, hp, maxHp, Color.rgb(209, 61, 65))
+        text(c, "EXP", 462f, 49f, 9f, Color.rgb(202, 230, 176))
+        bar(c, 490f, 39f, 190f, 11f, exp.toFloat(), need(level).toFloat(), Color.rgb(106, 190, 91))
+        paint.color = Color.argb(220, 9, 18, 22)
+        c.drawRoundRect(RectF(714f, 10f, 948f, 62f), 6f, 6f, paint)
+        text(c, "KOTA AMAN", 735f, 31f, 12f, Color.rgb(183, 211, 177))
+        text(c, "NPC: sentuh untuk bicara", 735f, 49f, 10f, Color.rgb(195, 220, 211))
+        // Movement joystick stays in the lower-left, away from city action buttons.
+        paint.color = Color.argb(135, 190, 210, 190)
+        c.drawCircle(88f, 445f, 51f, paint)
+        paint.color = Color.argb(190, 49, 90, 75)
+        c.drawCircle(88f + moveX * 20f, 445f + moveY * 20f, 21f, paint)
+        text(c, "MOVE", 65f, 510f, 10f)
+        menuButton(c, "TOKO", 530f, 472f, 88f, 46f)
+        menuButton(c, "EQUIP", 623f, 472f, 100f, 46f)
+        menuButton(c, "BATTLE", 728f, 472f, 88f, 46f, true)
+        menuButton(c, "MENU", 821f, 472f, 95f, 46f)
+        if (messageTime > 0f) {
+            paint.color = Color.argb(232, 12, 20, 23)
+            c.drawRoundRect(RectF(280f, 420f, 680f, 458f), 7f, 7f, paint)
+            text(c, message.take(52), 294f, 444f, 11f, Color.rgb(255, 235, 189))
+        }
     }
 
     private fun drawMenu(c: Canvas) {
@@ -871,14 +955,17 @@ private class ForestGameView(context: Context) : View(context) {
                 hit(252f,326f,190f,44f) -> screen="EQUIPMENT"
                 hit(52f,382f,185f,44f) -> screen="QUESTS"
                 hit(252f,382f,190f,44f) -> screen="SETTINGS"
-                hit(510f,326f,340f,52f) -> {screen="GAME";x=470f;y=370f;gemmaX=425f;gemmaY=395f;moveX=0f;moveY=0f;cityMessage="Asterfall diserbu monster!";sfx("door",ToneGenerator.TONE_PROP_ACK)}
+                hit(510f,326f,340f,52f) -> {screen="CITY";x=470f;y=370f;gemmaX=425f;gemmaY=395f;moveX=0f;moveY=0f;cityMessage="Asterfall City: zona aman.";say(cityMessage,2.5f);sfx("door",ToneGenerator.TONE_PROP_ACK)}
             }
             "CITY" -> when {
-                hit(200f,420f,150f,42f) -> {cityMessage="Warga: Monster makin agresif di dalam hutan. Siapkan ramuan!";say(cityMessage,3f)}
-                hit(355f,420f,150f,42f) -> {screen="SHOP";moveX=0f;moveY=0f}
-                hit(510f,420f,180f,42f) -> {cityMessage="Pandai besi: Upgrade senjata dan armor bisa kamu beli dari menu Equipment.";screen="EQUIPMENT"}
-                hit(690f,475f,240f,45f) -> {screen="GAME";x=470f;y=285f;gemmaX=425f;gemmaY=320f;moveX=0f;moveY=0f;say("Portal aktif! Selamat datang di Hutan Sunyi.",3f);sfx("door",ToneGenerator.TONE_PROP_ACK)}
-                hit(200f,475f,150f,42f) -> {screen="MAIN";moveX=0f;moveY=0f}
+                hit(530f,472f,88f,46f) -> {screen="SHOP";moveX=0f;moveY=0f;say("Pedagang Asterfall siap melayani.",2f)}
+                hit(623f,472f,100f,46f) -> {screen="EQUIPMENT";moveX=0f;moveY=0f;say("Pandai besi: pilih upgrade perlengkapanmu.",2f)}
+                hit(728f,472f,88f,46f) -> {screen="GAME";x=470f;y=370f;gemmaX=425f;gemmaY=395f;moveX=0f;moveY=0f;say("Keluar dari kota! Monster menyerang dari sisi arena.",3f);sfx("door",ToneGenerator.TONE_PROP_ACK)}
+                hit(821f,472f,95f,46f) -> {screen="MAIN";moveX=0f;moveY=0f}
+                hit(195f,325f,105f,95f) -> say("Penjaga kota: jalanan aman, tetapi ancaman monster datang dari luar tembok.",3f)
+                hit(405f,325f,105f,95f) -> say("Tabib: simpan ramuan untuk saat HP-mu menipis.",3f)
+                hit(665f,325f,105f,95f) -> {screen="SHOP";moveX=0f;moveY=0f}
+                hit(805f,305f,90f,105f) -> {screen="EQUIPMENT";moveX=0f;moveY=0f}
             }
             "CREATE" -> when {
                 hit(52f,145f,370f,46f) -> showNameDialog()
