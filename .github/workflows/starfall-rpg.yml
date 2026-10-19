@@ -17,6 +17,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Fetch CC0 animated fantasy sprites
+        run: |
+          mkdir -p starfall-rpg/app/src/main/assets/graphics
+          curl -fL --retry 3 "https://raw.githubusercontent.com/sang-guru/NinjaAdventure/main/content/character/samurai_blue/sprite.png" -o starfall-rpg/app/src/main/assets/graphics/hero_samurai.png
+          curl -fL --retry 3 "https://raw.githubusercontent.com/sang-guru/NinjaAdventure/main/content/character/ninja_blue/sprite.png" -o starfall-rpg/app/src/main/assets/graphics/gemma_ninja.png
+          curl -fL --retry 3 "https://raw.githubusercontent.com/sang-guru/NinjaAdventure/main/content/character/pig/pig.png" -o starfall-rpg/app/src/main/assets/graphics/pig.png
       - name: Build STARFALL RPG debug APK
         working-directory: starfall-rpg
         run: ../native-sandev/gradlew --no-daemon assembleDebug

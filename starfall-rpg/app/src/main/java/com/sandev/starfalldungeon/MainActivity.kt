@@ -50,6 +50,9 @@ private class ForestGameView(context: Context) : View(context) {
     private val soundIds = mutableMapOf<String, Int>()
     private var urbanSheet: Bitmap? = null
     private var rpgSheet: Bitmap? = null
+    private var heroSheet: Bitmap? = null
+    private var gemmaSheet: Bitmap? = null
+    private var pigSheet: Bitmap? = null
     private var footstepTimer = 0f
     private data class Effect(var x: Float, var y: Float, var tx: Float, var ty: Float, var life: Float, val kind: Int)
     private val effects = mutableListOf<Effect>()
@@ -97,6 +100,9 @@ private class ForestGameView(context: Context) : View(context) {
     private fun loadGameAssets() {
         try { context.assets.open("graphics/urban_tiles.png").use { urbanSheet = BitmapFactory.decodeStream(it) } } catch (_: Exception) {}
         try { context.assets.open("graphics/rpg_tiles.png").use { rpgSheet = BitmapFactory.decodeStream(it) } } catch (_: Exception) {}
+        try { context.assets.open("graphics/hero_samurai.png").use { heroSheet = BitmapFactory.decodeStream(it) } } catch (_: Exception) {}
+        try { context.assets.open("graphics/gemma_ninja.png").use { gemmaSheet = BitmapFactory.decodeStream(it) } } catch (_: Exception) {}
+        try { context.assets.open("graphics/pig.png").use { pigSheet = BitmapFactory.decodeStream(it) } } catch (_: Exception) {}
         listOf("step", "attack", "impact", "spell").forEach { name ->
             try { context.assets.openFd("audio/$name.ogg").use { afd -> soundIds[name] = soundPool.load(afd, 1) } } catch (_: Exception) {}
         }
@@ -258,6 +264,27 @@ private class ForestGameView(context: Context) : View(context) {
         paint.isFilterBitmap = false
     }
 
+    // Ninja Adventure CC0 sprite sheets are 4 columns x 7 rows of 16px frames.
+    private fun facingColumn(dx: Float, dy: Float): Int {
+        if (kotlin.math.abs(dx) > kotlin.math.abs(dy)) return if (dx >= 0f) 3 else 2
+        return if (dy >= 0f) 0 else 1
+    }
+
+    private fun drawAnimatedCharacter(c: Canvas, sheet: Bitmap?, cx: Float, feetY: Float,
+                                      moving: Boolean, direction: Int, widthPx: Float, heightPx: Float) {
+        if (sheet == null || sheet.width < 64 || sheet.height < 112) return
+        val frameRow = if (moving) 1 + ((clock * 7f).toInt() % 3) else 0
+        val breathe = if (moving) 1f else 1f + kotlin.math.sin(clock * 3.2f) * 0.025f
+        val dstH = heightPx * breathe
+        val dst = RectF(cx - widthPx / 2f, feetY - dstH, cx + widthPx / 2f, feetY)
+        paint.shader = null; paint.alpha = 255; paint.isFilterBitmap = false
+        c.drawBitmap(sheet,
+            android.graphics.Rect(direction.coerceIn(0, 3) * 16, frameRow * 16,
+                                  direction.coerceIn(0, 3) * 16 + 16, frameRow * 16 + 16),
+            dst, paint)
+        paint.isFilterBitmap = false; paint.alpha = 255
+    }
+
     private fun text(c: Canvas, s: String, tx: Float, ty: Float, size: Float, color: Int = Color.WHITE) {
         paint.color = color; paint.textSize = size; paint.setShadowLayer(2f, 1f, 1f, Color.BLACK)
         c.drawText(s, tx, ty, paint); paint.clearShadowLayer()
@@ -300,31 +327,40 @@ private class ForestGameView(context: Context) : View(context) {
     private fun drawCharacters(c: Canvas) {
         mobs.filter { it.alive }.forEach { m ->
             if (m.kind == 2) {
-                paint.color = Color.argb(100,0,0,0); c.drawOval(RectF(m.x-28,m.y+15,m.x+30,m.y+31),paint)
-                paint.shader=LinearGradient(m.x-20,m.y-28,m.x+20,m.y+23,Color.rgb(112,172,72),Color.rgb(29,66,40),Shader.TileMode.CLAMP); c.drawRoundRect(RectF(m.x-25,m.y-31,m.x+25,m.y+26),12f,12f,paint); paint.shader=null
-                text(c,"🌳",m.x-21,m.y+12,38f,Color.WHITE)
-                paint.color = Color.rgb(222,221,143); c.drawCircle(m.x-9,m.y-13,3.5f,paint); c.drawCircle(m.x+9,m.y-13,3.5f,paint)
-                bar(c,m.x-36,m.y-43,72f,7f,m.hp,m.maxHp,Color.rgb(210,64,64))
-                text(c,"THORNHEART",m.x-47,m.y-50,9f,Color.rgb(255,220,140))
-                if (m.windup > 0f) text(c,"DODGE!",m.x-24,m.y+42,12f,Color.YELLOW)
+                paint.color = Color.argb(105,0,0,0); c.drawOval(RectF(m.x-39,m.y+17,m.x+40,m.y+34),paint)
+                paint.color = Color.rgb(65,43,31); c.drawRoundRect(RectF(m.x-24,m.y-24,m.x+24,m.y+28),10f,10f,paint)
+                paint.color = Color.rgb(91,72,42); c.drawRoundRect(RectF(m.x-32,m.y-32,m.x+32,m.y+20),12f,12f,paint)
+                paint.color = Color.rgb(54,83,42); c.drawOval(RectF(m.x-37,m.y-39,m.x+2,m.y+4),paint); c.drawOval(RectF(m.x-4,m.y-43,m.x+37,m.y+3),paint)
+                paint.color = Color.rgb(135,180,76); c.drawCircle(m.x-11,m.y-13,4f,paint); c.drawCircle(m.x+12,m.y-13,4f,paint)
+                paint.color = Color.rgb(235,202,104); c.drawCircle(m.x-11,m.y-13,1.8f,paint); c.drawCircle(m.x+12,m.y-13,1.8f,paint)
+                paint.color = Color.rgb(110,70,39); paint.strokeWidth = 6f; c.drawLine(m.x-22,m.y-24,m.x-39,m.y-40,paint); c.drawLine(m.x+22,m.y-24,m.x+39,m.y-40,paint); paint.strokeWidth = 1f
+                bar(c,m.x-36,m.y-50,72f,7f,m.hp,m.maxHp,Color.rgb(210,64,64))
+                text(c,"THORNHEART",m.x-47,m.y-57,9f,Color.rgb(255,220,140))
+                if (m.windup > 0f) text(c,"DODGE!",m.x-24,m.y+45,12f,Color.YELLOW)
             } else {
-                val wolf = m.kind == 1
-                paint.color = Color.argb(95,0,0,0); c.drawOval(RectF(m.x-17,m.y+6,m.x+18,m.y+18),paint)
-                text(c,if(wolf) "🐺" else "🟢",m.x-18,m.y+8,30f,Color.WHITE)
-                if(!wolf) text(c,"👀",m.x-8,m.y-5,11f,Color.WHITE)
-                bar(c,m.x-18,m.y-24,36f,5f,m.hp,m.maxHp,Color.rgb(207,70,65))
-                if (m.windup > 0f) text(c,"!",m.x-3,m.y-28,16f,Color.YELLOW)
+                paint.color = Color.argb(95,0,0,0); c.drawOval(RectF(m.x-19,m.y+6,m.x+20,m.y+17),paint)
+                val mobSize = if (m.kind == 1) 39f else 34f
+                if (pigSheet != null) {
+                    paint.shader = null; paint.alpha = 255; paint.isFilterBitmap = false
+                    c.drawBitmap(pigSheet!!, null, RectF(m.x-mobSize/2f,m.y-mobSize+5f,m.x+mobSize/2f,m.y+5f), paint)
+                } else {
+                    paint.color = if (m.kind == 1) Color.rgb(113,100,91) else Color.rgb(110,176,92)
+                    c.drawOval(RectF(m.x-16,m.y-25,m.x+16,m.y+8),paint)
+                    paint.color = Color.rgb(240,218,157); c.drawCircle(m.x-6,m.y-12,2.5f,paint); c.drawCircle(m.x+6,m.y-12,2.5f,paint)
+                }
+                bar(c,m.x-19,m.y-28,38f,5f,m.hp,m.maxHp,Color.rgb(207,70,65))
+                if (m.windup > 0f) text(c,"!",m.x-3,m.y-32,16f,Color.YELLOW)
             }
         }
-        paint.color=Color.argb(80,0,0,0); c.drawOval(RectF(gemmaX-18,gemmaY+6,gemmaX+19,gemmaY+17),paint)
-        if (urbanSheet != null) drawSprite(c, urbanSheet, 608, 0, 16, 16, gemmaX-20, gemmaY-29, 40f, 40f)
-        else text(c,"🧙‍♀️",gemmaX-18,gemmaY+9,31f,Color.WHITE)
-        text(c,"✨",gemmaX+9,gemmaY-12+ kotlin.math.sin(clock*4f)*3f,15f,Color.WHITE)
-        text(c,"GEMMA",gemmaX-23,gemmaY-25,9f,Color.rgb(235,202,255))
+        paint.color = Color.argb(80,0,0,0); c.drawOval(RectF(gemmaX-18,gemmaY+4,gemmaX+19,gemmaY+15),paint)
+        val gemmaMoving = dist(gemmaX,gemmaY,x,y) > 54f
+        drawAnimatedCharacter(c, gemmaSheet, gemmaX, gemmaY+5f, gemmaMoving, facingColumn(x-gemmaX,y-gemmaY), 43f, 48f)
+        text(c,"GEMMA",gemmaX-23,gemmaY-49,9f,Color.rgb(235,202,255))
+        text(c,"✦",gemmaX+13,gemmaY-35+kotlin.math.sin(clock*4f)*3f,12f,Color.rgb(168,224,255))
         if (invuln <= 0f || (clock * 12f).toInt() % 2 == 0) {
-            paint.color=Color.argb(80,0,0,0); c.drawOval(RectF(x-16,y+7,x+17,y+17),paint)
-            if (urbanSheet != null) drawSprite(c, urbanSheet, if (hero == "Ranger") 591 else if (hero == "Mage") 608 else 575, 0, 16, 16, x-21, y-30, 42f, 42f)
-            else text(c,when(hero){"Vanguard"->"🧑🏻‍⚔️";"Ranger"->"🧝🏻‍♂️";else->"🧙🏻‍♂️"},x-20,y+9,33f,Color.WHITE)
+            paint.color=Color.argb(80,0,0,0); c.drawOval(RectF(x-17,y+6,x+18,y+17),paint)
+            val moving = kotlin.math.abs(moveX)+kotlin.math.abs(moveY) > 0.08f
+            drawAnimatedCharacter(c, heroSheet, x, y+5f, moving, if (moving) facingColumn(moveX,moveY) else 0, 47f, 51f)
             if(hitFlash>0f){paint.color=Color.argb(100,255,60,60);c.drawCircle(x,y-3,23f,paint)}
         }
     }
@@ -391,47 +427,77 @@ private class ForestGameView(context: Context) : View(context) {
     }
 
     private fun drawCity(c: Canvas) {
-        // Asterfall: warm evening sky, distant hills, a plaza, and more detailed storefronts.
-        paint.shader=LinearGradient(0f,0f,0f,540f,Color.rgb(52,91,125),Color.rgb(239,173,111),Shader.TileMode.CLAMP);c.drawRect(0f,0f,960f,540f,paint);paint.shader=null
-        paint.color=Color.argb(100,255,233,168);c.drawCircle(805f,88f,57f,paint)
-        paint.color=Color.rgb(72,103,96);c.drawOval(RectF(-80f,140f,400f,300f),paint);c.drawOval(RectF(330f,125f,760f,300f),paint);c.drawOval(RectF(660f,155f,1060f,310f),paint)
-        for(i in 0..8){val bx=i*116f-25f;val hh=65f+(i*29%74);paint.color=if(i%2==0)Color.rgb(77,94,91) else Color.rgb(91,105,96);c.drawRect(bx,224f-hh,bx+88f,292f,paint);paint.color=Color.rgb(218,184,119);for(wx in 0..2)for(wy in 0..2)c.drawRoundRect(RectF(bx+12f+wx*24f,235f-hh+wy*22f,bx+21f+wx*24f,246f-hh+wy*22f),2f,2f,paint)}
-        paint.color=Color.rgb(57,104,69);c.drawRect(0f,285f,960f,540f,paint)
-        paint.shader=LinearGradient(0f,300f,0f,510f,Color.rgb(190,166,126),Color.rgb(126,112,94),Shader.TileMode.CLAMP);c.drawRoundRect(RectF(0f,306f,960f,510f),10f,10f,paint);paint.shader=null
-        paint.color=Color.rgb(209,190,153);c.drawRect(0f,300f,960f,309f,paint)
-        for(i in 0..23){val xx=i*42f;paint.color=if(i%2==0)Color.rgb(154,137,111) else Color.rgb(173,153,122);c.drawLine(xx,315f,xx+18f,495f,paint)}
-        for(i in 0..17){val yy=320f+i*10f;paint.color=Color.argb(55,54,44,36);c.drawLine(0f,yy,960f,yy+3f,paint)}
-        for(g in listOf(18f to 280f,690f to 280f,875f to 286f)){paint.color=Color.rgb(42,78,48);c.drawRoundRect(RectF(g.first,g.second,g.first+65f,g.second+38f),7f,7f,paint);for(k in 0..4){paint.color=Color.rgb(101,157,73);c.drawCircle(g.first+9f+k*12f,g.second+12f+(k%2)*9f,5f,paint)}}
-        val buildings=listOf(48f to "🏨",258f to "🛒",468f to "⚒️")
-        buildings.forEachIndexed { idx,b ->
-            val bx=b.first
-            paint.color=Color.argb(75,0,0,0);c.drawRoundRect(RectF(bx+7f,188f,bx+197f,330f),5f,5f,paint)
-            paint.color=Color.rgb(91,62,48);c.drawRect(bx,174f,bx+190f,321f,paint)
-            paint.color=Color.rgb(190,147,94);c.drawRect(bx+8f,183f,bx+182f,313f,paint)
-            paint.color=Color.rgb(129,75,56);c.drawRect(bx+15f,190f,bx+175f,311f,paint)
-            val roofPath = android.graphics.Path().apply { moveTo(bx-10f,184f); lineTo(bx+95f,125f); lineTo(bx+200f,184f); close() }
-            paint.color=Color.rgb(108,42,48);c.drawPath(roofPath,paint)
-            if (urbanSheet != null) { c.save(); c.clipPath(roofPath); drawSprite(c, urbanSheet, 272, 0, 64, 32, bx-10f, 125f, 210f, 60f); c.restore() }
-            paint.color=Color.rgb(222,176,103);c.drawRect(bx+22f,196f,bx+168f,204f,paint)
-            for(wx in 0..2){paint.color=Color.rgb(238,205,126);c.drawRoundRect(RectF(bx+24f+wx*49f,216f,bx+51f+wx*49f,246f),3f,3f,paint);paint.color=Color.rgb(58,80,91);c.drawRect(bx+28f+wx*49f,220f,bx+47f+wx*49f,242f,paint)}
-            paint.color=Color.rgb(94,52,43);c.drawRoundRect(RectF(bx+70f,259f,bx+120f,321f),4f,4f,paint);paint.color=Color.rgb(202,164,103);c.drawCircle(bx+109f,289f,3f,paint)
-            text(c,b.second,bx+79f,173f,25f,Color.WHITE)
-            text(c,listOf("THE WAYFARER INN","MERCHANTS ROW","IRON AND EMBER")[idx],bx+23f,164f,10f,Color.rgb(255,238,190))
+        paint.shader = LinearGradient(0f,0f,0f,540f,Color.rgb(39,58,83),Color.rgb(205,142,93),Shader.TileMode.CLAMP)
+        c.drawRect(0f,0f,960f,540f,paint); paint.shader = null
+        // Distant hills and medieval castle wall: deliberately no modern skyline.
+        paint.color = Color.rgb(52,78,75); c.drawOval(RectF(-110f,112f,300f,295f),paint); c.drawOval(RectF(190f,102f,610f,295f),paint); c.drawOval(RectF(540f,125f,1040f,300f),paint)
+        paint.color = Color.rgb(72,72,69); c.drawRect(0f,174f,960f,292f,paint)
+        paint.color = Color.rgb(103,94,78); c.drawRect(0f,184f,960f,292f,paint)
+        for (i in 0..19) { val bx=i*49f; paint.color=if(i%2==0)Color.rgb(111,101,83) else Color.rgb(91,85,73); c.drawRect(bx,164f,bx+28f,190f,paint) }
+        for (tx in listOf(90f,390f,700f,900f)) {
+            paint.color=Color.rgb(72,67,60); c.drawRect(tx,132f,tx+52f,253f,paint)
+            paint.color=Color.rgb(125,108,84); c.drawRect(tx+7f,143f,tx+45f,253f,paint)
+            paint.color=Color.rgb(70,62,55); val roofPath=android.graphics.Path().apply{moveTo(tx-5f,143f);lineTo(tx+26f,105f);lineTo(tx+57f,143f);close()}; c.drawPath(roofPath,paint)
+            paint.color=Color.rgb(218,174,106); c.drawRect(tx+17f,166f,tx+35f,190f,paint)
         }
-        text(c,"🏹",700f,353f,34f,Color.WHITE);text(c,"🧙‍♀️",758f,344f,34f,Color.WHITE);text(c,"🧑‍🌾",850f,358f,32f,Color.WHITE);text(c,"🧔",650f,402f,32f,Color.WHITE)
-        paint.color=Color.rgb(88,67,94);c.drawRoundRect(RectF(790f,334f,866f,425f),20f,20f,paint);paint.color=Color.rgb(159,116,191);c.drawRoundRect(RectF(800f,344f,856f,415f),17f,17f,paint);paint.shader=RadialGradient(828f,380f,35f,intArrayOf(Color.rgb(166,234,255),Color.rgb(79,92,199),Color.rgb(28,45,74)),null,Shader.TileMode.CLAMP);c.drawCircle(828f,380f,29f,paint);paint.shader=null;text(c,"🌀",808f,389f,34f,Color.WHITE)
-        // Hero and Gemma are drawn last and follow the player around the town.
-        paint.color=Color.argb(95,0,0,0);c.drawOval(RectF(gemmaX-17,gemmaY+5,gemmaX+18,gemmaY+16),paint)
-        if (urbanSheet != null) drawSprite(c, urbanSheet, 608, 0, 16, 16, gemmaX-20, gemmaY-29, 40f, 40f) else text(c,"🧙‍♀️",gemmaX-18,gemmaY+8,31f,Color.WHITE)
-        text(c,"GEMMA",gemmaX-21,gemmaY-22,9f,Color.rgb(255,224,255))
-        paint.color=Color.argb(95,0,0,0);c.drawOval(RectF(x-17,y+6,x+18,y+17),paint)
-        val heroEmoji=when(hero){"Vanguard"->"🧑🏻‍⚔️";"Ranger"->"🧝🏻‍♂️";else->"🧙🏻‍♂️"}
-        if (urbanSheet != null) drawSprite(c, urbanSheet, if (hero == "Ranger") 591 else if (hero == "Mage") 608 else 575, 0, 16, 16, x-21, y-30, 42f, 42f) else text(c,heroEmoji,x-20,y+9,33f,Color.WHITE)
-        text(c,playerName.ifBlank{"HERO"}.take(12),x-24,y-22,10f,Color.rgb(255,238,185))
-        paint.color=Color.argb(218,12,23,25);c.drawRoundRect(RectF(18f,16f,465f,82f),9f,9f,paint);text(c,"🏙️ KOTA ASTERFALL",34f,43f,20f,Color.rgb(255,222,153));text(c,cityMessage.take(52),34f,65f,11f,Color.WHITE)
-        paint.color=Color.argb(125,190,210,190);c.drawCircle(88f,445f,49f,paint);paint.color=Color.argb(200,49,90,75);c.drawCircle(88f+moveX*19f,445f+moveY*19f,20f,paint);text(c,"GERAK",60f,510f,10f)
-        menuButton(c,"🧑‍🌾 WARGA",30f,420f,150f,42f);menuButton(c,"🛒 TOKO",190f,420f,150f,42f);menuButton(c,"⚒️ PANDAI BESI",350f,420f,180f,42f)
-        menuButton(c,"🌀 MASUK HUTAN",690f,475f,240f,45f,true);menuButton(c,"MENU",30f,475f,150f,42f)
+        paint.shader=LinearGradient(0f,276f,0f,540f,Color.rgb(77,119,69),Color.rgb(38,76,49),Shader.TileMode.CLAMP); c.drawRect(0f,276f,960f,540f,paint); paint.shader=null
+        paint.color=Color.rgb(119,105,84); c.drawRoundRect(RectF(0f,314f,960f,540f),6f,6f,paint)
+        for(row in 0..12) for(col in 0..35) {
+            val px=col*28f+(if(row%2==0)0f else 14f); val py=320f+row*17f
+            paint.color=when((row*7+col*3)%4){0->Color.rgb(151,132,105);1->Color.rgb(130,115,93);2->Color.rgb(166,145,113);else->Color.rgb(142,125,101)}
+            c.drawRoundRect(RectF(px,py,px+25f,py+13f),2f,2f,paint)
+            paint.color=Color.argb(45,30,25,20); c.drawLine(px+2f,py+12f,px+23f,py+12f,paint)
+        }
+        for (i in 0..16) {
+            val gx=(i*71f+19f)%950f; val gy=296f+(i%4)*47f
+            paint.color=Color.rgb(33,80,42); c.drawOval(RectF(gx,gy,gx+43f,gy+22f),paint)
+            paint.color=Color.rgb(68,132,55); c.drawCircle(gx+10f,gy+6f,5f,paint); c.drawCircle(gx+24f,gy+4f,6f,paint)
+            if(i%3==0){paint.color=Color.rgb(228,188,110);c.drawCircle(gx+30f,gy+12f,2.5f,paint)}
+        }
+        fun house(bx:Float,by:Float,w:Float,wall:Int,roof:Int,sign:String) {
+            val h=126f
+            paint.color=Color.argb(90,0,0,0); c.drawRoundRect(RectF(bx+7f,by+12f,bx+w+9f,by+h+12f),5f,5f,paint)
+            paint.color=Color.rgb(57,42,31); c.drawRect(bx,by+18f,bx+w,by+h,paint)
+            paint.color=wall; c.drawRect(bx+7f,by+27f,bx+w-7f,by+h-4f,paint)
+            paint.color=Color.rgb(74,45,30); paint.strokeWidth=7f
+            c.drawLine(bx+10f,by+31f,bx+w-10f,by+31f,paint); c.drawLine(bx+12f,by+31f,bx+12f,by+h-6f,paint); c.drawLine(bx+w-12f,by+31f,bx+w-12f,by+h-6f,paint)
+            c.drawLine(bx+15f,by+56f,bx+w-15f,by+88f,paint); c.drawLine(bx+w-15f,by+56f,bx+15f,by+88f,paint); paint.strokeWidth=1f
+            val rp=android.graphics.Path().apply{moveTo(bx-13f,by+24f);lineTo(bx+w/2f,by-39f);lineTo(bx+w+13f,by+24f);close()}
+            paint.color=Color.rgb(54,35,29); c.drawPath(rp,paint); c.save(); c.clipPath(rp)
+            paint.shader=LinearGradient(bx,by-38f,bx+w,by+28f,roof,Color.rgb(76,43,36),Shader.TileMode.CLAMP); c.drawRect(bx-16f,by-42f,bx+w+16f,by+28f,paint); paint.shader=null
+            for(r in 0..5){paint.color=Color.argb(85,20,14,13);c.drawLine(bx-10f,by-23f+r*10f,bx+w+10f,by-23f+r*10f,paint)}; c.restore()
+            paint.color=Color.rgb(56,35,26); c.drawRect(bx+w/2f-17f,by+76f,bx+w/2f+17f,by+h,paint)
+            paint.color=Color.rgb(129,80,45); c.drawRect(bx+w/2f-12f,by+81f,bx+w/2f+12f,by+h,paint)
+            paint.color=Color.rgb(239,193,105); c.drawCircle(bx+w/2f+7f,by+99f,2.5f,paint)
+            for(wx in listOf(bx+19f,bx+w-39f)){paint.color=Color.rgb(69,43,30);c.drawRect(wx,by+48f,wx+20f,by+72f,paint);paint.color=Color.rgb(246,203,116);c.drawRect(wx+3f,by+51f,wx+17f,by+69f,paint);paint.color=Color.rgb(98,78,48);c.drawLine(wx+10f,by+51f,wx+10f,by+69f,paint);c.drawLine(wx+3f,by+60f,wx+17f,by+60f,paint)}
+            paint.color=Color.rgb(95,76,59); c.drawRect(bx+w/2f-22f,by+h-3f,bx+w/2f+22f,by+h+5f,paint)
+            text(c,sign,bx+8f,by+15f,10f,Color.rgb(255,235,188))
+        }
+        house(46f,207f,164f,Color.rgb(183,143,94),Color.rgb(137,59,45),"THE WAYFARER")
+        house(280f,211f,160f,Color.rgb(163,132,91),Color.rgb(91,49,37),"GENERAL GOODS")
+        house(514f,207f,164f,Color.rgb(177,154,112),Color.rgb(111,50,43),"IRON & EMBER")
+        // Medieval well, market crates and notice board.
+        paint.color=Color.rgb(72,59,44); c.drawRect(733f,292f,801f,329f,paint); paint.color=Color.rgb(143,129,102); c.drawRect(738f,295f,796f,322f,paint); paint.color=Color.rgb(48,65,65); c.drawOval(RectF(744f,296f,790f,312f),paint)
+        paint.color=Color.rgb(115,75,42); c.drawRect(716f,272f,722f,322f,paint); c.drawRect(808f,272f,814f,322f,paint); c.drawRect(705f,270f,825f,276f,paint)
+        paint.color=Color.rgb(92,60,37); c.drawRect(680f,343f,716f,371f,paint); c.drawRect(721f,350f,750f,374f,paint); paint.color=Color.rgb(171,120,65); c.drawRect(684f,347f,712f,366f,paint); c.drawRect(725f,354f,746f,369f,paint)
+        paint.color=Color.rgb(70,45,30); c.drawRect(664f,286f,671f,337f,paint); paint.color=Color.rgb(155,100,47); c.drawRect(648f,284f,698f,301f,paint); text(c,"NOTICE",652f,296f,7f,Color.rgb(255,231,174))
+        // Portal is rendered as layered rings and particles, never as an emoji.
+        paint.color=Color.argb(60,96,181,255); c.drawCircle(860f,363f,61f,paint); paint.color=Color.argb(100,95,178,255); paint.style=Paint.Style.STROKE; paint.strokeWidth=7f; c.drawOval(RectF(827f,309f,893f,401f),paint); paint.strokeWidth=3f; paint.color=Color.rgb(169,223,255); c.drawOval(RectF(835f,317f,885f,393f),paint); paint.style=Paint.Style.FILL
+        paint.shader=RadialGradient(860f,354f,42f,intArrayOf(Color.rgb(117,226,255),Color.rgb(66,103,191),Color.rgb(19,38,67)),null,Shader.TileMode.CLAMP); c.drawOval(RectF(839f,320f,881f,390f),paint); paint.shader=null
+        for(i in 0..7){val a=clock*0.6f+i*0.785f;paint.color=Color.rgb(196,239,255);c.drawCircle(860f+kotlin.math.cos(a)*39f,355f+kotlin.math.sin(a)*49f,2.5f,paint)}
+        // Villagers use the same cohesive animated pixel-art sheets.
+        drawAnimatedCharacter(c,gemmaSheet,236f,378f,true,facingColumn(kotlin.math.sin(clock),1f),37f,43f)
+        drawAnimatedCharacter(c,heroSheet,462f,390f,true,facingColumn(kotlin.math.cos(clock),1f),37f,43f)
+        paint.color=Color.argb(80,0,0,0); c.drawOval(RectF(gemmaX-18,gemmaY+4,gemmaX+19,gemmaY+15),paint)
+        drawAnimatedCharacter(c,gemmaSheet,gemmaX,gemmaY+5f,dist(gemmaX,gemmaY,x,y)>54f,facingColumn(x-gemmaX,y-gemmaY),43f,48f)
+        paint.color=Color.argb(80,0,0,0); c.drawOval(RectF(x-17,y+6,x+18,y+17),paint)
+        val moving=kotlin.math.abs(moveX)+kotlin.math.abs(moveY)>0.08f
+        drawAnimatedCharacter(c,heroSheet,x,y+5f,moving,if(moving)facingColumn(moveX,moveY) else 0,47f,51f)
+        text(c,playerName.ifBlank{"HERO"}.take(12),x-24,y-51,10f,Color.rgb(255,238,185)); text(c,"GEMMA",gemmaX-23,gemmaY-49,9f,Color.rgb(255,224,255))
+        paint.color=Color.argb(218,12,23,25);c.drawRoundRect(RectF(18f,16f,465f,82f),9f,9f,paint); text(c,"KOTA ASTERFALL",34f,43f,20f,Color.rgb(255,222,153)); text(c,cityMessage.take(52),34f,65f,11f,Color.WHITE)
+        paint.color=Color.argb(125,190,210,190);c.drawCircle(88f,445f,49f,paint); paint.color=Color.argb(200,49,90,75);c.drawCircle(88f+moveX*19f,445f+moveY*19f,20f,paint); text(c,"GERAK",60f,510f,10f)
+        menuButton(c,"WARGA",30f,420f,150f,42f); menuButton(c,"TOKO",190f,420f,150f,42f); menuButton(c,"PANDAI BESI",350f,420f,180f,42f)
+        menuButton(c,"MASUK HUTAN",690f,475f,240f,45f,true); menuButton(c,"MENU",30f,475f,150f,42f)
     }
 
     private fun drawMenu(c: Canvas) {
