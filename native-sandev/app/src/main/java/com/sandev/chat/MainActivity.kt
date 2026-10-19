@@ -239,6 +239,8 @@ class MainActivity : AppCompatActivity() {
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(3), dp(4), dp(3))
+            background = panelBackground(palette.panel, palette.muted, 16)
         }
         addAction(actions, "AI Model") { showModelMenu() }
         addAction(actions, "Model Tune") { showModelTuneMenu() }
@@ -320,11 +322,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun addAction(row: LinearLayout, label: String, action: () -> Unit) {
+        val p = palettes[themeIndex]
         val button = Button(this).apply {
             text = label
             textSize = 12f
             minWidth = 0
-            setPadding(dp(5), 0, dp(5), 0)
+            minHeight = dp(40)
+            setPadding(dp(8), 0, dp(8), 0)
+            setTextColor(p.text)
+            background = panelBackground(p.panel, p.muted, 13)
+            stateListAnimator = null
             setOnClickListener { action() }
         }
         val params = if (row.orientation == LinearLayout.VERTICAL) {
@@ -360,7 +367,10 @@ class MainActivity : AppCompatActivity() {
             setTextColor(p.text)
             typeface = Typeface.DEFAULT_BOLD
         })
-        row.addView(item, LinearLayout.LayoutParams(0, dp(54), 1f))
+        item.background = panelBackground(p.background, p.muted, 12)
+        row.addView(item, LinearLayout.LayoutParams(0, dp(54), 1f).apply {
+            leftMargin = dp(2); rightMargin = dp(2)
+        })
     }
 
     private fun updateNavigationColors() {
@@ -709,12 +719,12 @@ class MainActivity : AppCompatActivity() {
         chatColumn.addView(characterRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(10) })
 
         val scorePanel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(12), dp(14), dp(12))
-            background = panelBackground(p.panel, Color.rgb(53, 66, 88), 16)
+            orientation = LinearLayout.VERTICAL; setPadding(dp(8), dp(6), dp(8), dp(6))
+            background = panelBackground(p.panel, Color.rgb(53, 66, 88), 14)
         }
         scorePanel.addView(TextView(this).apply {
             text = "🏆 SKOR PERTANDINGAN"; textSize = 12f; typeface = Typeface.DEFAULT_BOLD
-            setTextColor(p.accent); setPadding(0, 0, 0, dp(8))
+            setTextColor(p.accent); setPadding(0, 0, 0, dp(3))
         })
         val scoreRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val playerScore = LinearLayout(this).apply {
@@ -722,7 +732,7 @@ class MainActivity : AppCompatActivity() {
             addView(TextView(this@MainActivity).apply { text = userName.ifBlank { "Kamu" }; textSize = 12f; setTextColor(p.muted) })
             addView(TextView(this@MainActivity).apply {
                 text = if (blackjackPlayerHand.isEmpty()) "—" else handValue(blackjackPlayerHand).toString()
-                textSize = 25f; typeface = Typeface.DEFAULT_BOLD; setTextColor(p.text)
+                textSize = 18f; typeface = Typeface.DEFAULT_BOLD; setTextColor(p.text)
             })
         }
         val versus = TextView(this).apply {
@@ -734,7 +744,7 @@ class MainActivity : AppCompatActivity() {
             addView(TextView(this@MainActivity).apply { text = "Naya"; textSize = 12f; setTextColor(p.muted) })
             addView(TextView(this@MainActivity).apply {
                 text = if (blackjackDealerHand.isEmpty()) "—" else if (blackjackRoundActive && !blackjackGameOver) "?" else handValue(blackjackDealerHand).toString()
-                textSize = 25f; typeface = Typeface.DEFAULT_BOLD; setTextColor(p.text)
+                textSize = 18f; typeface = Typeface.DEFAULT_BOLD; setTextColor(p.text)
             })
         }
         scoreRow.addView(playerScore, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -742,7 +752,7 @@ class MainActivity : AppCompatActivity() {
         scoreRow.addView(botScore, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         scorePanel.addView(scoreRow)
         scorePanel.addView(TextView(this).apply {
-            text = "Chip: " + blackjackChips; textSize = 12f; setTextColor(p.muted); setPadding(0, dp(8), 0, 0)
+            text = "Chip: " + blackjackChips; textSize = 11f; setTextColor(p.muted); setPadding(0, dp(3), 0, 0)
         })
         chatColumn.addView(scorePanel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(10) })
 
@@ -834,9 +844,15 @@ class MainActivity : AppCompatActivity() {
                 })
             }
         }
-        chatCard.addView(transcript, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+        val transcriptScroll = ScrollView(this).apply {
+            isFillViewport = false
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            addView(transcript, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+        chatCard.addView(transcriptScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(104)).apply {
             bottomMargin = dp(4)
         })
+        transcriptScroll.post { transcriptScroll.fullScroll(View.FOCUS_DOWN) }
         val chatActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val chatInput = EditText(this).apply {
             hint = "Ketik pesan…"; setSingleLine(true); maxLines = 1; imeOptions = EditorInfo.IME_ACTION_SEND
@@ -2489,14 +2505,32 @@ class MainActivity : AppCompatActivity() {
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = if (message.role == "user") Gravity.END else Gravity.START
+                    setPadding(0, dp(2), 0, dp(2))
+                }
+                if (message.role != "user") {
+                    val bot = activeBot()
+                    val avatar = ImageView(this).apply {
+                        layoutParams = LinearLayout.LayoutParams(dp(30), dp(30)).apply { rightMargin = dp(6); topMargin = dp(2) }
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        background = panelBackground(p.panel, p.accent, 50)
+                        bot.avatarPath?.let { path -> if (File(path).exists()) decodeScaledBitmap(path, 96)?.let { setImageBitmap(it) } }
+                        if (drawable == null) {
+                            setImageDrawable(android.graphics.drawable.GradientDrawable().apply {
+                                shape = android.graphics.drawable.GradientDrawable.OVAL
+                                setColor(p.panel)
+                                setStroke(dp(1), p.accent)
+                            })
+                        }
+                    }
+                    row.addView(avatar)
                 }
                 val bubble = TextView(this).apply {
                     text = message.text
                     textSize = 15f
-                    setTextColor(p.text)
-                    setPadding(dp(13), dp(10), dp(13), dp(10))
-                    maxWidth = (resources.displayMetrics.widthPixels * 0.78f).toInt()
-                    background = panelBackground(if (message.role == "user") p.userBubble else p.botBubble, if (message.role == "user") p.accent else Color.rgb(53, 66, 88), 16)
+                    setTextColor(if (message.role == "user") Color.WHITE else p.text)
+                    setPadding(dp(14), dp(11), dp(14), dp(11))
+                    maxWidth = (resources.displayMetrics.widthPixels * 0.74f).toInt()
+                    background = panelBackground(if (message.role == "user") p.userBubble else p.botBubble, if (message.role == "user") p.accent else p.muted, if (message.role == "user") 18 else 16)
                 }
                 row.addView(bubble, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
                 val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
