@@ -79,10 +79,15 @@ private class ForestGameView(context: Context) : View(context) {
     private var hp = 100f; private var maxHp = 100f
     private var mana = 100f; private var maxMana = 100f
     private var gemmaHp = 100f; private var gemmaMaxHp = 100f
-    private var level = prefs.getInt("level", 1).coerceIn(1, 200)
+    private var level = prefs.getInt("level", 1).coerceIn(1, 100)
     private var exp = prefs.getInt("exp", 0).coerceAtLeast(0)
     private var gold = prefs.getInt("gold", 0).coerceAtLeast(0)
     private var kills = prefs.getInt("kills", 0).coerceAtLeast(0)
+    private var campaignStage = prefs.getInt("campaign_stage", 1).coerceIn(1, 50)
+    private var unlockedStage = prefs.getInt("campaign_unlocked_stage", 1).coerceIn(1, 50)
+    private var stageKills = prefs.getInt("campaign_stage_kills", 0).coerceIn(0, 30)
+    private var gemmaLevel = prefs.getInt("gemma_level", 1).coerceIn(1, 100)
+    private var gemmaExp = prefs.getInt("gemma_exp", 0).coerceAtLeast(0)
     private var damage = 14f + (level - 1) * 2f
     private var attackTimer = 0f; private var gemmaTimer = 0f
     private var gemmaChat = "Ayo, kita pasti bisa! 💖"
@@ -94,6 +99,9 @@ private class ForestGameView(context: Context) : View(context) {
     private var message = "Hutan Sunyi: berburu untuk EXP dan gold"
     private var messageTime = 5f; private var clock = 0f; private var screenShake = 0f
     private var bossSpawned = false; private var bossCleared = false
+    private val stageBossEmoji = listOf("🐺", "🦂", "🐍", "🦇", "🦍", "🦈", "🧌", "🐉", "👹", "👑")
+    private val eliteBossEmoji = listOf("👹", "🐲", "🦖", "☠️", "👑")
+    private val regionNames = listOf("Hutan Asterfall", "Rawa Terkutuk", "Pantai Terlupakan", "Pegunungan Beku", "Gurun Kehancuran")
     private var screen = "MAIN"
     private var equipmentReturnScreen = "MAIN"
     private var cityMessage = "Kota Asterfall: bicara dengan warga sebelum masuk hutan."
@@ -148,7 +156,7 @@ private class ForestGameView(context: Context) : View(context) {
     }
 
     private fun refreshAreaBackdrop(force: Boolean = false) {
-        val next = (kills / 30).coerceIn(0, areaKeys.lastIndex)
+        val next = ((campaignStage - 1) / 10).coerceIn(0, 4).coerceAtMost(areaKeys.lastIndex)
         if (!force && next == activeAreaIndex && areaBackdrop != null) return
         activeAreaIndex = next
         try {
@@ -219,8 +227,10 @@ private class ForestGameView(context: Context) : View(context) {
     private fun fx(sx: Float, sy: Float, tx: Float, ty: Float, kind: Int, life: Float = 0.32f) { effects.add(Effect(sx,sy,tx,ty,life,kind)) }
     private fun save() {
         prefs.edit()
-            .putInt("save_version", 1)
+            .putInt("save_version", 2)
             .putInt("level", level).putInt("exp", exp).putInt("gold", gold).putInt("kills", kills)
+            .putInt("campaign_stage", campaignStage).putInt("campaign_unlocked_stage", unlockedStage).putInt("campaign_stage_kills", stageKills)
+            .putInt("gemma_level", gemmaLevel).putInt("gemma_exp", gemmaExp)
             .putString("player_name", playerName).putString("hero", hero)
             .putInt("potions", potions).putInt("materials", materials)
             .putInt("weapon_level", weaponLevel).putInt("armor_level", armorLevel).putInt("skill_level", skillLevel)
@@ -230,9 +240,11 @@ private class ForestGameView(context: Context) : View(context) {
     }
 
     private fun exportSaveText(): String = JSONObject()
-        .put("save_version", 1)
+        .put("save_version", 2)
         .put("game", "STARFALL_RPG")
         .put("level", level).put("exp", exp).put("gold", gold).put("kills", kills)
+        .put("campaign_stage", campaignStage).put("campaign_unlocked_stage", unlockedStage).put("campaign_stage_kills", stageKills)
+        .put("gemma_level", gemmaLevel).put("gemma_exp", gemmaExp)
         .put("player_name", playerName).put("hero", hero)
         .put("potions", potions).put("materials", materials)
         .put("weapon_level", weaponLevel).put("armor_level", armorLevel).put("skill_level", skillLevel)
@@ -252,7 +264,7 @@ private class ForestGameView(context: Context) : View(context) {
         }
         AlertDialog.Builder(context)
             .setTitle("Ekspor Save Starfall")
-            .setMessage("Cadangan JSON versi 1. Salin dan simpan teks ini agar progres bisa dipulihkan setelah memasang ulang game.")
+            .setMessage("Cadangan JSON versi 2. Memuat progres Campaign dan EXP Gemma. Simpan teks ini untuk pemulihan setelah memasang ulang game.")
             .setView(field)
             .setNegativeButton("Tutup", null)
             .setPositiveButton("Salin Save") { _, _ ->
@@ -274,7 +286,7 @@ private class ForestGameView(context: Context) : View(context) {
         }
         AlertDialog.Builder(context)
             .setTitle("Impor Save Starfall")
-            .setMessage("Tempel cadangan JSON. Save versi lama tanpa penanda versi akan dibaca sebagai versi 1.")
+            .setMessage("Tempel cadangan JSON versi 1 atau 2. Save lama akan dimigrasikan.")
             .setView(field)
             .setNegativeButton("Batal", null)
             .setPositiveButton("Impor") { _, _ -> importSaveText(field.text.toString()) }
@@ -288,10 +300,15 @@ private class ForestGameView(context: Context) : View(context) {
                 say("File ini bukan save Starfall RPG.", 3f); invalidate(); return
             }
             val version = data.optInt("save_version", 1)
-            if (version !in 1..1) {
+            if (version !in 1..2) {
                 say("Versi save tidak didukung: $version.", 3f); invalidate(); return
             }
-            level = data.optInt("level", level).coerceIn(1, 200)
+            level = data.optInt("level", level).coerceIn(1, 100)
+            campaignStage = data.optInt("campaign_stage", campaignStage).coerceIn(1, 50)
+            unlockedStage = data.optInt("campaign_unlocked_stage", unlockedStage).coerceIn(1, 50).coerceAtLeast(campaignStage)
+            stageKills = data.optInt("campaign_stage_kills", stageKills).coerceIn(0, 30)
+            gemmaLevel = data.optInt("gemma_level", gemmaLevel).coerceIn(1, 100)
+            gemmaExp = data.optInt("gemma_exp", gemmaExp).coerceAtLeast(0)
             exp = data.optInt("exp", exp).coerceAtLeast(0)
             gold = data.optInt("gold", gold).coerceAtLeast(0)
             kills = data.optInt("kills", kills).coerceAtLeast(0)
@@ -402,17 +419,16 @@ private class ForestGameView(context: Context) : View(context) {
             mobs.filter { it.alive && it.kind != 2 }.forEach { it.x = (it.x + 180f).coerceIn(55f, 900f) }
             say("Mundur ke tempat aman. Gold dan EXP tetap utuh.", 4f)
         }
-        if (mobs.count { it.alive && it.kind != 2 } < 4 && random.nextFloat() < dt * 0.35f)
-            spawn(if (random.nextFloat() < 0.25f) 1 else 0)
-        if (!bossSpawned && level >= 5 && kills >= 18) {
-            bossSpawned = true; mobs.add(Mob(810f, 390f, 2, 1200f, 1200f))
-            say("THORNHEART GUARDIAN muncul! Serang saat ia selesai menghantam.", 5f)
-            gemmaTalk("BOSS DATANG! Jangan panik, aku bantu! 😤💖", 4f)
-        }
-        if (bossSpawned && !bossCleared && mobs.none { it.alive && it.kind == 2 }) {
-            bossCleared = true; exp += 250; gold += 125
-            say("Bos tumbang! +250 EXP, +125 gold, material khusus.", 5f)
-            levelUp(); save()
+        if (!bossSpawned && stageKills < 30 && mobs.count { it.alive && it.kind != 2 } < 4 && random.nextFloat() < dt * 0.35f)
+            spawn(if (random.nextFloat() < 0.28f) 1 else 0)
+        if (!bossSpawned && stageKills >= 30) {
+            bossSpawned = true
+            val elite = campaignStage % 10 == 0
+            val bossHp = if (elite) 5200f + campaignStage * 420f else 950f + campaignStage * 135f
+            mobs.add(Mob(810f, 365f, 2, bossHp, bossHp, if (elite) 3.8f else 2.4f))
+            val bossName = if (elite) "ELITE BOSS " + eliteBossEmoji[(campaignStage / 10 - 1).coerceIn(0, 4)] else "BOS " + stageBossEmoji[(campaignStage - 1) % stageBossEmoji.size]
+            say("$bossName · STAGE $campaignStage MUNCUL!", 5f)
+            gemmaTalk(if (elite) "ELITE BOSS?! Ini bukan latihan lagi! Kita pasti bisa! 😤💖" else "Bosnya datang! Dodge yang tepat, ya! ⚔️", 4f)
         }
     }
 
@@ -420,26 +436,57 @@ private class ForestGameView(context: Context) : View(context) {
         if (!m.alive) return
         m.alive = false
         fx(m.x,m.y,m.x,m.y,4,0.55f); sfx(if (m.kind == 2) "boss" else "coins", ToneGenerator.TONE_PROP_ACK)
-        if (m.kind == 2) { kills++; refreshAreaBackdrop(); save(); return }
+        if (m.kind == 2) {
+            bossCleared = true
+            val elite = campaignStage % 10 == 0
+            val rewardGold = if (elite) 1200 + campaignStage * 30 else 120 + campaignStage * 12
+            val rewardExp = if (elite) 1800 + campaignStage * 45 else 280 + campaignStage * 12
+            gold += rewardGold; exp += rewardExp; gemmaExp += rewardExp / 2
+            if (campaignStage < 50) unlockedStage = max(unlockedStage, campaignStage + 1)
+            if (elite) { materials += 12; potions += 5; say("ELITE BOSS TUMBANG! +$rewardGold GOLD · +$rewardExp EXP · WILAYAH BARU!", 5f) }
+            else { materials += 3; say("BOS STAGE $campaignStage KALAH! Stage berikutnya terbuka. +$rewardGold GOLD", 4f) }
+            levelUp(); levelUpGemma(); save(); return
+        }
         kills++
+        stageKills = (stageKills + 1).coerceAtMost(30)
         val oldAreaIndex = activeAreaIndex
         refreshAreaBackdrop()
         if (activeAreaIndex != oldAreaIndex) say("Wilayah baru terbuka: "+areaNames[activeAreaIndex]+"!", 3f)
-        if (m.kind == 1) { exp += 22; gold += random.nextInt(6, 11) }
-        else { exp += 12; gold += random.nextInt(3, 7) }
+        if (m.kind == 1) { exp += 22; gold += random.nextInt(6, 11); gemmaExp += 11 }
+        else { exp += 12; gold += random.nextInt(3, 7); gemmaExp += 6 }
         val roll = random.nextInt(100)
         val drop = if (m.kind == 1 && roll < 60) { materials++; "material umum" }
             else if (m.kind == 0 && roll < 30) { materials++; "material umum" }
             else if (roll < 38) { potions++; "ramuan HP" } else ""
         say(if (drop.isEmpty()) "Monster tumbang! EXP dan gold didapat." else "Drop: $drop", 2f)
-        levelUp(); save()
+        levelUp(); levelUpGemma(); save()
     }
     private fun levelUp() {
-        while (level < 200 && exp >= need(level)) {
-            exp -= need(level); level++; maxHp += 10f; gemmaMaxHp += 8f; damage += 2f
-            hp = maxHp; gemmaHp = gemmaMaxHp
+        while (level < 100 && exp >= need(level)) {
+            exp -= need(level); level++; maxHp += 10f; damage += 2f
+            hp = maxHp
             say("LEVEL UP! Level $level. Perjuanganmu membuahkan hasil!", 3f)
         }
+    }
+    private fun gemmaNeed(l: Int): Int = (80 + l * l * 14).coerceAtMost(65000)
+    private fun levelUpGemma() {
+        while (gemmaLevel < 100 && gemmaExp >= gemmaNeed(gemmaLevel)) {
+            gemmaExp -= gemmaNeed(gemmaLevel); gemmaLevel++; gemmaMaxHp += 8f
+            gemmaHp = gemmaMaxHp
+            say("GEMMA LEVEL UP! Lv.$gemmaLevel 💖", 2.5f)
+        }
+    }
+    private fun startCampaignStage(stage: Int) {
+        if (stage !in 1..unlockedStage) { say("Kalahkan bos stage sebelumnya dulu!", 2f); return }
+        campaignStage = stage.coerceIn(1, 50)
+        stageKills = 0; bossSpawned = false; bossCleared = false
+        mobs.clear()
+        repeat(4) { spawn(if (it == 2) 1 else 0) }
+        refreshAreaBackdrop(force = true)
+        screen = "GAME"; x = 470f; y = 350f; gemmaX = 425f; gemmaY = 380f
+        moveX = 0f; moveY = 0f
+        say("STAGE $campaignStage · " + regionNames[(campaignStage - 1) / 10] + " · Kalahkan 30 monster lalu bos!", 4f)
+        save()
     }
     private fun drawSprite(c: Canvas, sheet: Bitmap?, sx: Int, sy: Int, sw: Int, sh: Int, dx: Float, dy: Float, dw: Float, dh: Float) {
         if (sheet == null || sx < 0 || sy < 0 || sx + sw > sheet.width || sy + sh > sheet.height) return
@@ -578,7 +625,9 @@ private class ForestGameView(context: Context) : View(context) {
                 paint.color = Color.rgb(235,202,104); c.drawCircle(m.x-11,m.y-13,1.8f,paint); c.drawCircle(m.x+12,m.y-13,1.8f,paint)
                 paint.color = Color.rgb(110,70,39); paint.strokeWidth = 6f; c.drawLine(m.x-22,m.y-24,m.x-39,m.y-40,paint); c.drawLine(m.x+22,m.y-24,m.x+39,m.y-40,paint); paint.strokeWidth = 1f
                 bar(c,m.x-36,m.y-50,72f,7f,m.hp,m.maxHp,Color.rgb(210,64,64))
-                text(c,"THORNHEART",m.x-47,m.y-57,9f,Color.rgb(255,220,140))
+                val elite = campaignStage % 10 == 0
+                text(c,if (elite) "ELITE STAGE $campaignStage" else "BOSS STAGE $campaignStage",m.x-48,m.y-57,9f,Color.rgb(255,220,140))
+                text(c,if (elite) eliteBossEmoji[(campaignStage / 10 - 1).coerceIn(0,4)] else stageBossEmoji[(campaignStage - 1) % stageBossEmoji.size],m.x-24f,m.y+10f,40f,Color.WHITE)
                 if (m.hitEmojiTime > 0f && m.hitEmoji.isNotBlank()) text(c,m.hitEmoji,m.x-12f,m.y-62f,22f,Color.WHITE)
                 if (m.windup > 0f) text(c,"DODGE!",m.x-24,m.y+45,12f,Color.YELLOW)
             } else {
@@ -705,7 +754,7 @@ private class ForestGameView(context: Context) : View(context) {
         text(c,"LV "+level,24f,69f,10f,Color.rgb(244,218,143)); text(c,"GOLD "+gold,91f,69f,10f,Color.rgb(244,218,143)); text(c,"KILL "+kills,178f,69f,10f); text(c,areaNames[activeAreaIndex].uppercase(),260f,69f,9f,Color.rgb(174,219,203))
         text(c,"HP",24f,87f,9f,Color.rgb(255,190,180)); bar(c,56f,78f,164f,11f,hp,maxHp,Color.rgb(209,61,65)); text(c,hp.toInt().toString()+"/"+maxHp.toInt(),226f,87f,9f)
         text(c,"MP",24f,103f,9f,Color.rgb(160,208,255)); bar(c,56f,94f,164f,11f,mana,maxMana,Color.rgb(52,132,230)); text(c,mana.toInt().toString()+"/"+maxMana.toInt(),226f,103f,9f)
-        text(c,"GEMMA",276f,87f,9f,Color.rgb(230,183,255)); bar(c,326f,78f,92f,11f,gemmaHp,gemmaMaxHp,Color.rgb(173,91,209)); text(c,gemmaHp.toInt().toString()+"/"+gemmaMaxHp.toInt(),326f,103f,9f)
+        text(c,"GEMMA Lv.$gemmaLevel",276f,87f,9f,Color.rgb(230,183,255)); bar(c,326f,78f,92f,11f,gemmaHp,gemmaMaxHp,Color.rgb(173,91,209)); text(c,gemmaHp.toInt().toString()+"/"+gemmaMaxHp.toInt(),326f,103f,9f); bar(c,326f,108f,92f,7f,gemmaExp.toFloat(),gemmaNeed(gemmaLevel).toFloat(),Color.rgb(121,198,104))
         paint.color=Color.argb(230,9,18,22); c.drawRoundRect(RectF(452f,52f,690f,96f),6f,6f,paint)
         text(c,"EXP  "+exp+" / "+need(level),464f,68f,10f,Color.rgb(202,230,176)); bar(c,464f,75f,214f,13f,exp.toFloat(),need(level).toFloat(),Color.rgb(106,190,91))
         text(c,"DODGE "+(if(dodgeCooldown<=0f)"READY" else (dodgeCooldown.toInt()+1).toString()+"s"),464f,90f,9f,Color.rgb(239,224,185))
@@ -992,7 +1041,7 @@ private class ForestGameView(context: Context) : View(context) {
                 menuButton(c, "INVENTORY", 252f, 270f, 190f, 44f)
                 menuButton(c, "SKILLS", 52f, 326f, 185f, 44f)
                 menuButton(c, "EQUIPMENT", 252f, 326f, 190f, 44f)
-                menuButton(c, "QUEST & MAP", 52f, 382f, 185f, 44f)
+                menuButton(c, "CAMPAIGN · 50 STAGE", 52f, 382f, 185f, 44f, true)
                 menuButton(c, "SETTINGS", 252f, 382f, 190f, 44f)
                 paint.color = Color.rgb(21, 39, 37); c.drawRoundRect(RectF(490f, 121f, 900f, 293f), 6f, 6f, paint)
                 text(c, "JELAJAHI ASTERFALL", 512f, 154f, 16f, Color.rgb(241, 216, 153))
@@ -1003,6 +1052,39 @@ private class ForestGameView(context: Context) : View(context) {
                 menuButton(c, "KOTA ASTERFALL", 510f, 326f, 340f, 52f, true)
                 text(c, "Offline  ·  Save lokal  ·  Pixel fantasy RPG", 510f, 412f, 11f, Color.rgb(144, 177, 155))
                 text(c, "Progres tersimpan otomatis di perangkat.", 510f, 435f, 10f, Color.rgb(144, 177, 155))
+                text(c, "50 stage · 5 wilayah · Elite Boss tiap 10 stage", 510f, 455f, 10f, Color.rgb(241, 216, 153))
+                menuButton(c, "STATUS GEMMA", 510f, 386f, 340f, 42f)
+            }
+            "CAMPAIGN" -> {
+                text(c, "PILIH STAGE · BOS WAJIB DIKALAHKAN", 52f, 132f, 12f, Color.rgb(241, 216, 153))
+                text(c, "Terbuka: 1-$unlockedStage · Stage aktif: $campaignStage · Kill: $stageKills/30", 52f, 151f, 11f, Color.rgb(185, 215, 190))
+                for (stage in 1..50) {
+                    val col = (stage - 1) % 10; val row = (stage - 1) / 10
+                    val bx = 52f + col * 86f; val by = 166f + row * 55f
+                    val open = stage <= unlockedStage; val elite = stage % 10 == 0
+                    paint.color = when { !open -> Color.rgb(34,39,39); elite -> Color.rgb(102,54,43); stage == campaignStage -> Color.rgb(60,91,62); else -> Color.rgb(31,56,47) }
+                    c.drawRoundRect(RectF(bx,by,bx+78f,by+45f),5f,5f,paint)
+                    paint.color = if (open) Color.rgb(129,158,109) else Color.rgb(72,78,76)
+                    paint.style = Paint.Style.STROKE; c.drawRoundRect(RectF(bx,by,bx+78f,by+45f),5f,5f,paint); paint.style = Paint.Style.FILL
+                    text(c, if (open) "STAGE $stage" else "LOCK $stage", bx+6f, by+17f, 10f, if(open) Color.WHITE else Color.LTGRAY)
+                    text(c, if(elite) "ELITE BOSS" else if(open) "BOSS" else "LOCKED", bx+6f, by+34f, 9f, if(elite) Color.rgb(255,190,123) else Color.rgb(178,202,177))
+                }
+                menuButton(c, "KEMBALI", 52f, 455f, 180f, 42f)
+                text(c, "Map: " + regionNames[(campaignStage-1)/10] + " · 30 kill memanggil bos.", 250f, 480f, 11f, Color.rgb(194,218,186))
+            }
+            "GEMMA" -> {
+                text(c, "STATUS & KEMAMPUAN GEMMA", 54f, 132f, 12f, Color.rgb(230,183,255))
+                text(c, "Level: $gemmaLevel / 100", 56f, 170f, 15f)
+                text(c, "EXP: $gemmaExp / " + gemmaNeed(gemmaLevel), 56f, 201f, 13f)
+                bar(c, 56f, 214f, 350f, 16f, gemmaExp.toFloat(), gemmaNeed(gemmaLevel).toFloat(), Color.rgb(121,198,104))
+                text(c, "HP: " + gemmaHp.toInt() + " / " + gemmaMaxHp.toInt(), 56f, 260f, 13f)
+                text(c, "Serangan otomatis: Arcane Bolt", 56f, 294f, 12f, Color.rgb(210,194,245))
+                text(c, "Damage: " + (10 + (gemmaLevel-1)*2), 56f, 321f, 12f)
+                text(c, "Skill: Ledakan tombak area", 56f, 350f, 12f)
+                text(c, "Perintah: FOLLOW · ATTACK · GUARD · RANGE", 56f, 379f, 11f)
+                menuButton(c, "KEMBALI", 52f, 420f, 190f, 44f)
+                text(c, "EXP Gemma didapat dari monster dan bos.", 500f, 151f, 12f, Color.rgb(184,207,175))
+                text(c, "Naik level meningkatkan HP maksimum Gemma.", 500f, 184f, 11f)
             }
             "CREATE" -> {
                 text(c, "PROFIL PEMAIN", 54f, 132f, 12f, Color.rgb(186, 207, 169))
@@ -1109,10 +1191,12 @@ private class ForestGameView(context: Context) : View(context) {
                 text(c, "PERMAINAN DIJEDA", 54f, 132f, 12f, Color.rgb(186, 207, 169))
                 menuButton(c, "LANJUT BERMAIN", 52f, 150f, 370f, 44f, true)
                 menuButton(c, "CHARACTER", 52f, 208f, 180f, 44f)
-                menuButton(c, "INVENTORY", 242f, 208f, 180f, 44f)
-                menuButton(c, "SKILLS", 52f, 266f, 180f, 44f)
-                menuButton(c, "EQUIPMENT", 242f, 266f, 180f, 44f)
-                menuButton(c, "MENU UTAMA", 52f, 324f, 370f, 44f)
+                menuButton(c, "GEMMA", 242f, 208f, 180f, 44f)
+                menuButton(c, "INVENTORY", 52f, 266f, 180f, 44f)
+                menuButton(c, "SKILLS", 52f, 324f, 180f, 44f)
+                menuButton(c, "EQUIPMENT", 242f, 324f, 180f, 44f)
+                menuButton(c, "CAMPAIGN", 52f, 382f, 180f, 44f)
+                menuButton(c, "MENU UTAMA", 242f, 382f, 180f, 44f)
                 text(c, "Progress otomatis tersimpan.", 500f, 151f, 12f, Color.rgb(184, 207, 175))
                 text(c, "Kamu bisa lanjut kapan saja.", 500f, 184f, 11f)
             }
@@ -1133,16 +1217,29 @@ private class ForestGameView(context: Context) : View(context) {
         fun hit(a:Float,b:Float,w:Float,h:Float)=tx in a..(a+w)&&ty in b..(b+h)
         when(screen) {
             "MAIN" -> when {
-                hit(52f,145f,390f,49f) -> if(playerName.isNotBlank()){screen="GAME";x=470f;y=370f;gemmaX=425f;gemmaY=395f;moveX=0f;moveY=0f;cityMessage="Asterfall diserbu monster!";sfx("door",ToneGenerator.TONE_PROP_ACK)}else screen="CREATE"
+                hit(52f,145f,390f,49f) -> if(playerName.isNotBlank()) startCampaignStage(campaignStage) else screen="CREATE"
                 hit(52f,207f,390f,46f) -> screen="CREATE"
                 hit(52f,270f,185f,44f) -> screen="CHARACTER"
                 hit(252f,270f,190f,44f) -> screen="INVENTORY"
                 hit(52f,326f,185f,44f) -> screen="SKILLS"
                 hit(252f,326f,190f,44f) -> {equipmentReturnScreen="MAIN";screen="EQUIPMENT"}
-                hit(52f,382f,185f,44f) -> screen="QUESTS"
+                hit(52f,382f,185f,44f) -> screen="CAMPAIGN"
                 hit(252f,382f,190f,44f) -> screen="SETTINGS"
                 hit(510f,326f,340f,52f) -> {screen="CITY";x=470f;y=370f;gemmaX=425f;gemmaY=395f;moveX=0f;moveY=0f;cityMessage="Asterfall City: zona aman.";say(cityMessage,2.5f);sfx("door",ToneGenerator.TONE_PROP_ACK)}
+                hit(510f,386f,340f,42f) -> screen="GEMMA"
             }
+            "CAMPAIGN" -> {
+                if (hit(52f,455f,180f,42f)) screen = "MAIN"
+                else {
+                    val col = ((tx - 52f) / 86f).toInt(); val row = ((ty - 166f) / 55f).toInt()
+                    if (tx >= 52f && col in 0..9 && row in 0..4 && ty >= 166f && ty < 441f) {
+                        val chosen = row * 10 + col + 1
+                        if (chosen <= unlockedStage) startCampaignStage(chosen)
+                        else say("Stage $chosen terkunci. Kalahkan bos Stage " + (chosen-1) + " dulu!", 2.5f)
+                    }
+                }
+            }
+            "GEMMA" -> if (hit(52f,420f,190f,44f)) screen = "MAIN"
             "CITY" -> when {
                 hit(530f,472f,88f,46f) -> {screen="SHOP";moveX=0f;moveY=0f;say("Pedagang Asterfall siap melayani.",2f)}
                 hit(623f,472f,100f,46f) -> {equipmentReturnScreen="CITY";screen="EQUIPMENT";moveX=0f;moveY=0f;say("Pandai besi: pilih upgrade perlengkapanmu.",2f)}
@@ -1189,10 +1286,12 @@ private class ForestGameView(context: Context) : View(context) {
             "PAUSE" -> when {
                 hit(52f,150f,370f,44f)->screen="GAME"
                 hit(52f,208f,180f,44f)->screen="CHARACTER"
-                hit(242f,208f,180f,44f)->screen="INVENTORY"
-                hit(52f,266f,180f,44f)->screen="SKILLS"
-                hit(242f,266f,180f,44f)->{equipmentReturnScreen="PAUSE";screen="EQUIPMENT"}
-                hit(52f,324f,370f,44f)->screen="MAIN"
+                hit(242f,208f,180f,44f)->screen="GEMMA"
+                hit(52f,266f,180f,44f)->screen="INVENTORY"
+                hit(52f,324f,180f,44f)->screen="SKILLS"
+                hit(242f,324f,180f,44f)->{equipmentReturnScreen="PAUSE";screen="EQUIPMENT"}
+                hit(52f,382f,180f,44f)->screen="CAMPAIGN"
+                hit(242f,382f,180f,44f)->screen="MAIN"
             }
         }
         save();invalidate()
