@@ -1,19 +1,29 @@
 # STARFALL RPG — Android prototype
 
-Standalone offline-first top-down 2D action-RPG prototype for Android, targeting lower-end devices such as the Galaxy A05 (6 GB RAM).
+Standalone offline-first, landscape top-down 2D action-RPG prototype for Android, targeting lower-end devices such as the Samsung Galaxy A05.
 
-## Current foundation
-- Landscape forest arena drawn with original low-cost pixel-style shapes (no paid assets or network access).
-- Touch joystick, auto-attacks, dodge, Arc Slash, Slime and Wolf enemies.
-- Gemma mage companion with deterministic fallback combat and four quick commands.
-- EXP curve, gold drops, early level progression and local SharedPreferences save.
-- Defeat returns the party to safety without removing gold or EXP.
-- Planned Thornheart Guardian encounter after sufficient progress.
-- Game continues without a local AI model; GGUF integration is intentionally a later phase.
+## Gameplay foundation
+- Landscape forest arena, touch joystick, auto-attacks, dodge, Arc Slash, Slime and Wolf enemies.
+- Animated hero and Gemma companion, regional enemies, campaign stages, EXP/gold progression, and local SharedPreferences save.
+- Gemma has deterministic fallback behavior when a local model is not loaded.
+
+## Local Gemma integration
+- The game can import a GGUF file selected from Android storage; the large model is copied in chunks to app-private storage, not packaged into the APK.
+- The same pinned llama.cpp Android binding used by the native Sandev Chat project is prepared at build time, with its low-memory 2048 context / 128 batch configuration.
+- After the model is loaded, Gemma can answer in-game chat prompts and periodically recommend a whitelisted tactical companion command (ATTACK, KEEP_DISTANCE, FOLLOW, or GUARD).
+- The game engine validates the command and executes the movement/command state; the model cannot directly edit save data or call arbitrary game methods.
+- Inference runs asynchronously and is not called every frame. The game has a deterministic FOLLOW fallback when no model is active or a tactical response is unusable.
+- The GGUF model itself is never bundled into the APK. On first launch, open **STATUS GEMMA** on the main menu, choose **Impor / ganti model GGUF**, and select your local model file. The first load may take time and requires enough free storage for the private copy.
 
 ## Build
-From this directory, run `../native-sandev/gradlew --no-daemon assembleDebug`.
+From this directory, run:
+
+```sh
+../native-sandev/scripts/prepare-engine.sh
+../native-sandev/gradlew --no-daemon assembleDebug
+```
+
 GitHub Actions workflow: `.github/workflows/starfall-rpg.yml`.
 
-## Honest status
-This is an early gameplay foundation. It has not been validated on a physical Galaxy A05 yet. Pixel-style primitives are temporary original artwork; the next visual pass can replace them with verified free assets whose licenses permit the intended use. Gemma is not yet powered by GGUF inference.
+## Validation status
+This is an integration prototype. CI compilation and on-device testing are still required before claiming the model works reliably while the game is running. A successful compile alone does not prove that the 1.1 GB model can run concurrently with gameplay without lag or memory pressure on every device.

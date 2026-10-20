@@ -1,10 +1,21 @@
-name: STARFALL RPG - prototype APK (compile fix)
+name: STARFALL RPG - local Gemma prototype
 on:
   workflow_dispatch:
-  push:
-    branches: [game/starfall-rpg-prototype, game/asterfall-action-map]
+  pull_request:
+    branches: [game/asterfall-action-map]
     paths:
       - 'starfall-rpg/**'
+      - 'native-sandev/scripts/**'
+      - 'native-sandev/patches/**'
+      - 'native-sandev/gradle/libs.versions.toml'
+      - '.github/workflows/starfall-rpg.yml'
+  push:
+    branches: [game/starfall-rpg-prototype, game/asterfall-action-map, game/starfall-local-gemma-ai]
+    paths:
+      - 'starfall-rpg/**'
+      - 'native-sandev/scripts/**'
+      - 'native-sandev/patches/**'
+      - 'native-sandev/gradle/libs.versions.toml'
       - '.github/workflows/starfall-rpg.yml'
 permissions:
   contents: read
@@ -31,6 +42,11 @@ jobs:
           echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0"
+      - name: Prepare pinned low-memory llama.cpp engine
+        run: ./scripts/prepare-engine.sh
+        working-directory: native-sandev
+      - name: Improve native model-load diagnostics for Starfall
+        run: python3 starfall-rpg/scripts/patch-engine-loader.py
       - name: Fetch CC0 animated fantasy sprites
         run: |
           mkdir -p starfall-rpg/app/src/main/assets/graphics
@@ -69,7 +85,7 @@ jobs:
         run: ../native-sandev/gradlew --no-daemon assembleDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: starfall-rpg-prototype
+          name: starfall-rpg-local-gemma
           path: starfall-rpg/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14

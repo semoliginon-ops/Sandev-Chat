@@ -3,7 +3,7 @@ set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 DEST="$ROOT/third_party/llama.cpp"
-PIN="f74e2fa6a31cc33ab4ee4ae516641cfe62df3924"
+PIN="3bb63cbcbfb62056c84fe9e521b0f3d756d29c32"
 
 if [ -d "$DEST/.git" ]; then
   git -C "$DEST" fetch --depth 1 origin "$PIN"
