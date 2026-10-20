@@ -46,7 +46,7 @@ class MainActivity : Activity() {
         gameView = ForestGameView(this)
         gemmaAi = GemmaLocalAi(
             this,
-            onStatus = { status -> if (::gameView.isInitialized) gameView.setGemmaStatus(status) },
+            onStatus = { status ->\n                if (::gameView.isInitialized) gameView.setGemmaStatus(status)\n                if (status.startsWith("Model gagal dimuat:")) {\n                    AlertDialog.Builder(this).setTitle("Gemma gagal dimuat")\n                        .setMessage(status)\n                        .setPositiveButton("OK", null).show()\n                }\n            },
             onChatReply = { reply ->
                 gameView.receiveGemmaReply(reply)
                 AlertDialog.Builder(this).setTitle("Gemma · Starfall RPG").setMessage(reply)
