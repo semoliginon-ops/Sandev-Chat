@@ -248,5 +248,5 @@ internal class GemmaLocalAi(
             if (it.moveToFirst()) it.getString(0) else null
         }
 
-    private fun shortError(e: Exception) = (e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName).take(140)
+    private fun shortError(e: Exception) = (e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName).take(1000)
 }
