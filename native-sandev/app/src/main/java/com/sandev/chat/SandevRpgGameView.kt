@@ -428,16 +428,14 @@ class SandevRpgGameView(
 
             // Small local models sometimes answer in free text or return an empty first generation.
             // Retry once with a shorter, action-first instruction when the first response is unusable.
-            var parsedAction = Regex("(?im)^\\s*ACTION\\s*:\\s*(ATTACK|SKILL|DEFEND|POTION)\\b").find(output)?.groupValues?.get(1)?.uppercase()
-                ?: Regex("(?i)\\b(ATTACK|SKILL|DEFEND|POTION)\\b").find(output)?.groupValues?.get(1)?.uppercase()
+            var parsedAction = Regex("(?im)^\\s*ACTION\\s*:\\s*(ATTACK|SKILL|DEFEND|POTION)\\s*$").find(output)?.groupValues?.get(1)?.uppercase()
             if (modelWasReady && parsedAction == null) {
                 try {
                     val retryPrompt = "Pilih aksi untuk state RPG yang baru saja diberikan. Jangan ulangi penjelasan. Balas tepat 3 baris tanpa markdown:\n" +
                         "ACTION: ATTACK / SKILL / DEFEND / POTION\nTARGET: indeks musuh hidup (0-based)\nCOMMENT: satu komentar pendek bahasa Indonesia."
                     val retryOutput = askGemma(retryPrompt)
                     if (retryOutput.isNotBlank()) output = retryOutput
-                    parsedAction = Regex("(?im)^\\s*ACTION\\s*:\\s*(ATTACK|SKILL|DEFEND|POTION)\\b").find(output)?.groupValues?.get(1)?.uppercase()
-                        ?: Regex("(?i)\\b(ATTACK|SKILL|DEFEND|POTION)\\b").find(output)?.groupValues?.get(1)?.uppercase()
+                    parsedAction = Regex("(?im)^\\s*ACTION\\s*:\\s*(ATTACK|SKILL|DEFEND|POTION)\\s*$").find(output)?.groupValues?.get(1)?.uppercase()
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
@@ -450,10 +448,10 @@ class SandevRpgGameView(
                 val targetMatch = Regex("(?im)^\\s*TARGET\\s*:\\s*(\\d+)").find(output)
                 val commentMatch = Regex("(?im)^\\s*COMMENT\\s*:\\s*(.+)$").find(output)
                 val parsedTarget = targetMatch?.groupValues?.get(1)?.toIntOrNull()
-                val action = parsedAction ?: fallbackGemmaAction()
+                val action = if (parsedAction != null && isGemmaActionLegal(parsedAction)) parsedAction else fallbackGemmaAction()
                 val targetIndex = if (parsedTarget != null && (enemies.getOrNull(parsedTarget)?.hp ?: 0) > 0) parsedTarget else bestTarget()
                 val comment = commentMatch?.groupValues?.get(1)?.trim().orEmpty()
-                if (parsedAction == null) {
+                if (parsedAction == null || !isGemmaActionLegal(parsedAction)) {
                     say(when {
                         !modelWasReady -> "Model Gemma belum siap, jadi sistem mengambil giliran ini."
                         else -> "Gemma belum memberi aksi yang bisa dibaca setelah dicoba ulang; sistem mengambil giliran ini."
@@ -477,13 +475,59 @@ class SandevRpgGameView(
         }
     }
 
+    /**
+     * Deterministic fallback shared with other game adapters through GameBrain.
+     * LLM suggestions are advisory; the selected action is validated separately.
+     */
     private fun fallbackGemmaAction(): String {
         val alive = enemies.filter { it.hp > 0 }
-        if (gemma.hp * 100 / gemma.maxHp < 32 && gemma.potions > 0) return "POTION"
-        if (player.hp * 100 / player.maxHp < 25 && smallPotions + largePotions > 0) return "POTION"
-        if (gemma.mp >= 12 && alive.any { it.hp < gemma.atk * 2 }) return "SKILL"
-        if (gemma.hp * 100 / gemma.maxHp < 40) return "DEFEND"
-        return if (gemma.mp >= 12 && Random.nextInt(100) < 45) "SKILL" else "ATTACK"
+        if (alive.isEmpty()) return "DEFEND"
+        val teamHealth = min(
+            player.hp.toDouble() / player.maxHp.coerceAtLeast(1),
+            gemma.hp.toDouble() / gemma.maxHp.coerceAtLeast(1)
+        ).coerceIn(0.0, 1.0)
+        val resourceRatio = (gemma.mp.toDouble() / gemma.maxMp.coerceAtLeast(1)).coerceIn(0.0, 1.0)
+        val threat = (alive.maxOfOrNull { it.atk }.orZero().toDouble() /
+            gemma.maxHp.coerceAtLeast(1).toDouble() * 2.0).coerceIn(0.0, 1.0)
+        val canHealGemma = gemma.potions > 0 && gemma.hp < gemma.maxHp * 85 / 100
+        val canHealPlayer = smallPotions + largePotions > 0 && player.hp < player.maxHp * 80 / 100
+        val chosen = GameBrain.choose(
+            GameBrain.Situation(
+                gameType = "turn-based-rpg",
+                healthRatio = teamHealth,
+                resourceRatio = resourceRatio,
+                threat = threat,
+                objectiveUrgency = (0.55 + stage / 100.0).coerceAtMost(1.0)
+            ),
+            listOf(
+                GameBrain.Candidate("ATTACK", legal = true, progress = 0.68, survival = 0.12, risk = 0.12),
+                GameBrain.Candidate("SKILL", legal = gemma.mp >= 12, progress = 1.0, survival = 0.12, resourceCost = 0.48, risk = 0.12),
+                GameBrain.Candidate("DEFEND", legal = true, progress = 0.08, survival = 0.72),
+                GameBrain.Candidate(
+                    "POTION",
+                    legal = canHealGemma || canHealPlayer,
+                    progress = 0.08,
+                    survival = if (canHealGemma && gemma.hp * 100 / gemma.maxHp < 35 ||
+                        canHealPlayer && player.hp * 100 / player.maxHp < 30) 1.0 else 0.72,
+                    resourceCost = 0.08
+                )
+            )
+        )
+        return chosen?.actionId ?: "ATTACK"
+    }
+
+    private fun Int?.orZero(): Int = this ?: 0
+
+    private fun isGemmaActionLegal(action: String): Boolean {
+        val aliveEnemies = enemies.any { it.hp > 0 }
+        return when (action) {
+            "ATTACK" -> aliveEnemies
+            "SKILL" -> gemma.mp >= 12 && aliveEnemies
+            "DEFEND" -> true
+            "POTION" -> (gemma.potions > 0 && gemma.hp < gemma.maxHp * 85 / 100) ||
+                (smallPotions + largePotions > 0 && player.hp < player.maxHp * 80 / 100)
+            else -> false
+        }
     }
 
     private fun bestTarget(): Int {
@@ -512,8 +556,16 @@ class SandevRpgGameView(
                     gemma.hp = min(gemma.maxHp, gemma.hp + gemma.maxHp * 40 / 100)
                     addLog("🥷 Gemma memakai potion dan memulihkan HP.")
                 } else if (smallPotions + largePotions > 0 && player.hp < player.maxHp * 80 / 100) {
-                    if (largePotions > 0 && player.hp < player.maxHp / 2) { largePotions--; player.hp = min(player.maxHp, player.hp + player.maxHp * 70 / 100) }
-                    else { smallPotions--; player.hp = min(player.maxHp, player.hp + player.maxHp * 35 / 100) }
+                    if (largePotions > 0 && (smallPotions == 0 || player.hp < player.maxHp / 2)) {
+                        largePotions--
+                        player.hp = min(player.maxHp, player.hp + player.maxHp * 70 / 100)
+                    } else if (smallPotions > 0) {
+                        smallPotions--
+                        player.hp = min(player.maxHp, player.hp + player.maxHp * 35 / 100)
+                    } else {
+                        applyGemmaAction("ATTACK", bestTarget())
+                        return
+                    }
                     addLog("🥷 Gemma menggunakan potion untuk menolong Player.")
                 } else applyGemmaAction("ATTACK", bestTarget())
             }
