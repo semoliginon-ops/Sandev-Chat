@@ -28,6 +28,8 @@ jobs:
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
       - name: Prepare pinned llama.cpp engine
         run: sh native-sandev/scripts/prepare-engine.sh
+      - name: Validate game model downloader script
+        run: sh -n native-sandev/scripts/download-game-model.sh
       - name: Compile integrated Sandev Chat APK
         working-directory: native-sandev
         run: |
