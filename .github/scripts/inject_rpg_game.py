@@ -16,7 +16,7 @@ if "</body>" not in html.lower():
 payload = r'''
 <style>
 /* SANDEV_TURN_BASED_RPG_V1 */
-#sandevRpgLaunch{position:fixed;z-index:9000;right:14px;bottom:18px;border:1px solid #64748b;background:#111827;color:#fff;border-radius:999px;padding:12px 16px;font-weight:800;box-shadow:0 5px 24px #0005}
+#sandevRpgLaunch{position:fixed;z-index:9000;right:14px;bottom:82px;border:1px solid #64748b;background:#111827;color:#fff;border-radius:999px;padding:12px 16px;font-weight:800;box-shadow:0 5px 24px #0005}
 #sandevRpgRoot{position:fixed;inset:0;z-index:9100;display:none;background:#0b1020;color:#eef2ff;font:14px/1.45 system-ui,-apple-system,sans-serif;overflow:auto}
 #sandevRpgRoot *{box-sizing:border-box}
 #sandevRpgRoot .rpg-wrap{max-width:760px;margin:auto;padding:16px 14px 28px}
