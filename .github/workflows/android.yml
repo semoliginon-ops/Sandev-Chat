@@ -2,12 +2,13 @@ name: Build Sandev Chat APK
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    branches: [main, master, 'feature/build36-integrated-gemma-rpg']
     paths:
       - 'sandev-chat-alpha-0.2.zip'
       - '.github/workflows/android.yml'
       - '.github/scripts/patch_gguf_loader.py'
       - '.github/scripts/patch_luna_runtime.py'
+      - '.github/scripts/inject_rpg_game.py'
       - '.github/patches/native-llama.cpp'
 permissions:
   contents: read
@@ -24,6 +25,16 @@ jobs:
           sed -i '/^    targetSdk 35$/d' source/sandev-chat/app/build.gradle
           python3 .github/scripts/patch_gguf_loader.py source/sandev-chat/app/src/main/java/com/sandev/chat/MainActivity.java
           python3 .github/scripts/patch_luna_runtime.py source/sandev-chat
+          python3 .github/scripts/inject_rpg_game.py source/sandev-chat
+          python3 - <<'PY'
+          from pathlib import Path
+          html = Path("source/sandev-chat/app/src/main/assets/index.html").read_text(encoding="utf-8")
+          marker = html.index("/* SANDEV_TURN_BASED_RPG_V1 */")
+          start = html.index("<script>", marker) + len("<script>")
+          end = html.index("</script>", start)
+          Path("/tmp/sandev-rpg-injected.js").write_text(html[start:end], encoding="utf-8")
+          PY
+          node --check /tmp/sandev-rpg-injected.js
           echo "Build configuration:"
           cat source/sandev-chat/app/build.gradle
       - uses: actions/setup-java@v4
