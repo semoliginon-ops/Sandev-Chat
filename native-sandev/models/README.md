@@ -1,25 +1,30 @@
-# SANDEV Game AI model plan
+# SANDEV Game AI model
 
-This directory documents the model artifact; the binary GGUF is intentionally not committed as a text file.
+## Candidate GGUF (not yet runtime-verified in Sandev Chat)
 
-## Target
-- Target model file: approximately 150 MB maximum (not a promise until a concrete artifact is measured).
-- Runtime: the existing Sandev Chat `llama.cpp` engine.
-- Scope: a general game assistant for turn-based, tactics, survival, and objective-driven games.
-- Interface: concise structured decision output; the app must validate actions before executing them.
+- Model: [SmolLM2-135M-Instruct-GGUF](https://huggingface.co/tensorblock/SmolLM2-135M-Instruct-GGUF)
+- Suggested file: `SmolLM2-135M-Instruct-Q8_0.gguf`
+- Reported size: about 145 MB (must be verified from the downloaded file)
+- Base license: Apache-2.0, as stated on the model card
+- Architecture: Llama-family GGUF
+- Chat template shown by the model card: ChatML-style `<|im_start|>` / `<|im_end|>`
 
-## Important distinction
-A prompt or Kotlin decision engine is not a trained GGUF model. Creating a reliable 150 MB GGUF requires selecting an existing model with suitable redistribution terms, checking its tokenizer/chat template and architecture against the pinned engine, then obtaining/quantizing the actual weights and testing them. This repository does not yet contain that model binary.
+This is a small **general instruction model**, not a game-fine-tuned model. It is a candidate for structured game recommendations, not a promise of strong reasoning. The model card notes the family primarily understands and generates English, so Indonesian comments need explicit testing. The deterministic `GameBrain` layer remains the rule-safe fallback.
 
-## Integration contract
-The app passes a compact game-state description and a list of legal action IDs. The model may recommend an action, but it must not be trusted to enforce game rules. Game adapters validate the response and use `GameBrain` as deterministic fallback.
+## Download and inspect
 
-## Acceptance checks
-1. A valid GGUF metadata header is readable by the app's existing metadata reader.
-2. The pinned llama.cpp engine loads the model on arm64-v8a Android.
-3. A fixed prompt suite returns an allowed action ID, or the deterministic fallback is used.
-4. No illegal action can be executed (invalid target, unavailable resource, or unavailable action).
-5. Record model file size, peak memory, first-token latency, tokens/second, and response validity on the target phone.
-6. Record source model, license, quantization method, SHA-256, and test results before distributing.
+From the repository root, run:
 
-Do not label the model as custom-trained or game-fine-tuned unless an actual training/fine-tuning run and its provenance are recorded.
+```sh
+sh native-sandev/scripts/download-game-model.sh
+```
+
+The script stores the downloaded model under `native-sandev/models/local/` (ignored by Git), checks the GGUF magic bytes and file-size ceiling, and prints SHA-256. Do not commit the model binary into ordinary Git history: it exceeds GitHub's normal 100 MB single-file limit. Use a properly configured Git LFS or release/model-hosting workflow if you later decide to redistribute it.
+
+## Before using it in the app
+
+1. Download the model and import the resulting `.gguf` through Sandev Chat's existing model picker.
+2. Confirm the pinned `llama.cpp` runtime loads it on arm64-v8a.
+3. Run the same game-state prompt suite against the model and the deterministic fallback.
+4. Record valid-action rate, invalid-action rate, load time, first-token latency, tokens/second, peak memory and exact file SHA-256.
+5. Keep model output advisory. Game rules and legal-action validation stay in Kotlin.
