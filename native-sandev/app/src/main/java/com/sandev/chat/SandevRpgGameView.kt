@@ -432,8 +432,8 @@ class SandevRpgGameView(
                 ?: Regex("(?i)\\b(ATTACK|SKILL|DEFEND|POTION)\\b").find(output)?.groupValues?.get(1)?.uppercase()
             if (modelWasReady && parsedAction == null) {
                 try {
-                    val retryPrompt = "Pilih aksi untuk state RPG yang baru saja diberikan. Jangan ulangi penjelasan. Balas tepat 3 baris tanpa markdown:\\n" +
-                        "ACTION: ATTACK / SKILL / DEFEND / POTION\\nTARGET: indeks musuh hidup (0-based)\\nCOMMENT: satu komentar pendek bahasa Indonesia."
+                    val retryPrompt = "Pilih aksi untuk state RPG yang baru saja diberikan. Jangan ulangi penjelasan. Balas tepat 3 baris tanpa markdown:\n" +
+                        "ACTION: ATTACK / SKILL / DEFEND / POTION\nTARGET: indeks musuh hidup (0-based)\nCOMMENT: satu komentar pendek bahasa Indonesia."
                     val retryOutput = askGemma(retryPrompt)
                     if (retryOutput.isNotBlank()) output = retryOutput
                     parsedAction = Regex("(?im)^\\s*ACTION\\s*:\\s*(ATTACK|SKILL|DEFEND|POTION)\\b").find(output)?.groupValues?.get(1)?.uppercase()
