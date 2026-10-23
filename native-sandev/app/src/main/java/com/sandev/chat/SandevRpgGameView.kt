@@ -9,13 +9,12 @@ import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 import kotlin.math.max
 import kotlin.math.min
@@ -86,6 +85,7 @@ class SandevRpgGameView(
     private var gemmaGuarding = false
     private var bubble = ""
     private var bubbleJob: Job? = null
+    private var decisionJob: Job? = null
     private var battleLog = mutableListOf<String>()
     private var lastResult = ""
     private var lastReward = ""
@@ -170,7 +170,16 @@ class SandevRpgGameView(
         addView(text("⚔️ SANDEV RPG", 20f, Color.rgb(220, 205, 255), true))
         addView(text(title, 16f, Color.WHITE, true))
         if (!subtitle.isNullOrBlank()) addView(text(subtitle, 12f, Color.rgb(166, 181, 207)))
-        addButtonRow(listOf("← Kembali ke Sandev Chat" to onClose))
+        addButtonRow(listOf("← Kembali ke Sandev Chat" to ::closeGame))
+    }
+
+    private fun closeGame() {
+        decisionJob?.cancel()
+        decisionJob = null
+        bubbleJob?.cancel()
+        bubbleJob = null
+        busy = false
+        onClose()
     }
 
     private fun render() {
@@ -395,26 +404,24 @@ class SandevRpgGameView(
         busy = true
         render()
         val prompt = buildString {
-            appendLine("Kamu adalah Gemma, partner petualangan dalam game RPG turn-based. Pilih aksi game berdasarkan state, bukan sekadar komentar.")
-            appendLine("Player HP " + player.hp + "/" + player.maxHp + ", MP " + player.mp + "/" + player.maxMp + ", ATK " + player.atk + ", potion " + (smallPotions + largePotions) + ".")
-            appendLine("Gemma HP " + gemma.hp + "/" + gemma.maxHp + ", MP " + gemma.mp + "/" + gemma.maxMp + ", ATK " + gemma.atk + ", potion pribadi " + gemma.potions + ".")
-            appendLine("Musuh hidup: " + enemies.mapIndexedNotNull { index, enemy -> if (enemy.hp > 0) index.toString() + ": " + enemy.name + " HP " + enemy.hp + "/" + enemy.maxHp + " ATK " + enemy.atk + " DEF " + enemy.def + " tipe " + enemy.kind else null }.joinToString("; "))
-            appendLine("Pilih satu aksi: ATTACK, SKILL, DEFEND, atau POTION. SKILL memakai 12 MP dan memberi damage besar. POTION memulihkan HP jika potion tersedia. DEFEND mengurangi damage musuh.")
-            appendLine("Pilih target berdasarkan indeks musuh yang masih hidup.")
-            appendLine("Jawab tepat tiga baris:")
-            appendLine("ACTION: ATTACK atau SKILL atau DEFEND atau POTION")
-            appendLine("TARGET: angka indeks")
-            appendLine("COMMENT: satu kalimat singkat bahasa Indonesia")
+            appendLine("Kamu mengendalikan partner Gemma dalam RPG turn-based. Pilih aksi legal paling berguna berdasarkan status saat ini.")
+            appendLine("PLAYER: HP " + player.hp + "/" + player.maxHp + ", MP " + player.mp + "/" + player.maxMp + ", ATK " + player.atk + ", potion " + (smallPotions + largePotions) + ".")
+            appendLine("GEMMA: HP " + gemma.hp + "/" + gemma.maxHp + ", MP " + gemma.mp + "/" + gemma.maxMp + ", ATK " + gemma.atk + ", potion " + gemma.potions + ".")
+            appendLine("MUSUH HIDUP: " + enemies.mapIndexedNotNull { index, enemy -> if (enemy.hp > 0) "$index:${enemy.name} HP${enemy.hp}/${enemy.maxHp} ATK${enemy.atk} DEF${enemy.def} ${enemy.kind}" else null }.joinToString("; "))
+            appendLine("SKILL perlu 12 MP; POTION hanya jika stok ada dan HP perlu dipulihkan; DEFEND mengurangi damage musuh.")
+            appendLine("Balas tepat 3 baris, tanpa markdown atau penjelasan:")
+            appendLine("ACTION: ATTACK / SKILL / DEFEND / POTION")
+            appendLine("TARGET: indeks musuh hidup (0-based)")
+            appendLine("COMMENT: satu komentar pendek dalam bahasa Indonesia")
         }
-        scope.launch {
+        decisionJob = scope.launch {
             var output = ""
-            var timedOut = false
             var modelWasReady = false
             try {
                 modelWasReady = aiReady()
-                if (modelWasReady) output = withTimeout(45_000L) { askGemma(prompt) }
-            } catch (_: TimeoutCancellationException) {
-                timedOut = true
+                if (modelWasReady) output = askGemma(prompt)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
                 output = ""
             }
@@ -423,21 +430,18 @@ class SandevRpgGameView(
             // Retry once with a shorter, action-first instruction when the first response is unusable.
             var parsedAction = Regex("(?im)^\\s*ACTION\\s*:\\s*(ATTACK|SKILL|DEFEND|POTION)\\b").find(output)?.groupValues?.get(1)?.uppercase()
                 ?: Regex("(?i)\\b(ATTACK|SKILL|DEFEND|POTION)\\b").find(output)?.groupValues?.get(1)?.uppercase()
-            if (modelWasReady && parsedAction == null && !timedOut) {
+            if (modelWasReady && parsedAction == null) {
                 try {
-                    val retryPrompt = prompt +
-                        "\nIMPORTANT: Your previous answer was not usable. Reply with exactly these three lines, no markdown:" +
-                        "\nACTION: ATTACK" +
-                        "\nTARGET: 0" +
-                        "\nCOMMENT: one short Indonesian sentence. Use SKILL/DEFEND/POTION only when appropriate."
-                    val retryOutput = withTimeout(45_000L) { askGemma(retryPrompt) }
+                    val retryPrompt = "Pilih aksi untuk state RPG yang baru saja diberikan. Jangan ulangi penjelasan. Balas tepat 3 baris tanpa markdown:\\n" +
+                        "ACTION: ATTACK / SKILL / DEFEND / POTION\\nTARGET: indeks musuh hidup (0-based)\\nCOMMENT: satu komentar pendek bahasa Indonesia."
+                    val retryOutput = askGemma(retryPrompt)
                     if (retryOutput.isNotBlank()) output = retryOutput
                     parsedAction = Regex("(?im)^\\s*ACTION\\s*:\\s*(ATTACK|SKILL|DEFEND|POTION)\\b").find(output)?.groupValues?.get(1)?.uppercase()
                         ?: Regex("(?i)\\b(ATTACK|SKILL|DEFEND|POTION)\\b").find(output)?.groupValues?.get(1)?.uppercase()
-                } catch (_: TimeoutCancellationException) {
-                    timedOut = true
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (_: Exception) {
-                    // The fallback below keeps the battle moving if the retry also fails.
+                    // The fallback below keeps the battle moving if the model fails for a non-timeout reason.
                 }
             }
 
@@ -452,7 +456,6 @@ class SandevRpgGameView(
                 if (parsedAction == null) {
                     say(when {
                         !modelWasReady -> "Model Gemma belum siap, jadi sistem mengambil giliran ini."
-                        timedOut -> "Respons Gemma terlalu lama; sistem mengambil giliran ini agar battle lanjut."
                         else -> "Gemma belum memberi aksi yang bisa dibaca setelah dicoba ulang; sistem mengambil giliran ini."
                     })
                     addLog("Aksi sistem (fallback); respons model tidak valid atau kosong.")
