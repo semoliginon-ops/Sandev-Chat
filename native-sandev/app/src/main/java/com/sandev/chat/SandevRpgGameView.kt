@@ -302,8 +302,6 @@ class SandevRpgGameView(
             if (lastReward.isNotBlank()) addView(text(lastReward, 14f, Color.rgb(110, 231, 183), true))
             addView(text("Progress tersimpan otomatis.", 12f, Color.rgb(166, 181, 207)))
         })
-        addButtonRow(listOf(if (win) "Stage berikutnya" else "Coba lagi" to { }))
-        // Explicit buttons below avoid an ambiguous function-reference overload.
         addButtonRow(listOf((if (win) "Stage berikutnya" else "Coba lagi") to {
             if (win) startBattle(min(50, max(stage + 1, unlocked))) else startBattle(stage)
         }, "Menu" to { screen = "menu"; render() }))
@@ -426,7 +424,7 @@ class SandevRpgGameView(
                 val parsedAction = actionMatch?.groupValues?.get(1)?.uppercase()
                 val parsedTarget = targetMatch?.groupValues?.get(1)?.toIntOrNull()
                 val action = parsedAction ?: fallbackGemmaAction()
-                val targetIndex = if (parsedTarget != null && enemies.getOrNull(parsedTarget)?.hp ?: 0 > 0) parsedTarget else bestTarget()
+                val targetIndex = if (parsedTarget != null && (enemies.getOrNull(parsedTarget)?.hp ?: 0) > 0) parsedTarget else bestTarget()
                 val comment = commentMatch?.groupValues?.get(1)?.trim().orEmpty()
                 if (parsedAction == null) {
                     say(if (timedOut) "Aku sempat lambat merespons—aku tetap bantu dengan aksi taktis!" else "Output model kosong, aku lanjutkan giliran dengan aksi taktis.")
@@ -509,7 +507,7 @@ class SandevRpgGameView(
             if (guarding) damage = max(1, damage / 2)
             if (enemy.boss && Random.nextInt(100) < 28) damage = (damage * 1.5).toInt()
             target.hp = max(0, target.hp - damage)
-            addLog(enemy.emoji + " " + enemy.name + " menyerang " + if (targetGemma) "Gemma" else "Player" + " (" + damage + " damage).")
+            addLog(enemy.emoji + " " + enemy.name + " menyerang " + (if (targetGemma) "Gemma" else "Player") + " (" + damage + " damage).")
             if (enemy.kind == "drain" && target.hp > 0) enemy.hp = min(enemy.maxHp, enemy.hp + damage / 2)
         }
         playerGuarding = false
