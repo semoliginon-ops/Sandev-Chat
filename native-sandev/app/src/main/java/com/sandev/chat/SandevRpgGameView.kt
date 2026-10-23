@@ -409,27 +409,58 @@ class SandevRpgGameView(
         scope.launch {
             var output = ""
             var timedOut = false
+            var modelWasReady = false
             try {
-                if (aiReady()) output = withTimeout(45_000L) { askGemma(prompt) }
+                modelWasReady = aiReady()
+                if (modelWasReady) output = withTimeout(45_000L) { askGemma(prompt) }
             } catch (_: TimeoutCancellationException) {
                 timedOut = true
             } catch (_: Exception) {
                 output = ""
             }
+
+            // Small local models sometimes answer in free text or return an empty first generation.
+            // Retry once with a shorter, action-first instruction when the first response is unusable.
+            var parsedAction = Regex("(?im)^\\s*ACTION\\s*:\\s*(ATTACK|SKILL|DEFEND|POTION)\\b").find(output)?.groupValues?.get(1)?.uppercase()
+                ?: Regex("(?i)\\b(ATTACK|SKILL|DEFEND|POTION)\\b").find(output)?.groupValues?.get(1)?.uppercase()
+            if (modelWasReady && parsedAction == null && !timedOut) {
+                try {
+                    val retryPrompt = prompt +
+                        "\\nIMPORTANT: Your previous answer was not usable. Reply with exactly these three lines, no markdown:" +
+                        "\\nACTION: ATTACK" +
+                        "\\nTARGET: 0" +
+                        "\\nCOMMENT: one short Indonesian sentence. Use SKILL/DEFEND/POTION only when appropriate."
+                    val retryOutput = withTimeout(45_000L) { askGemma(retryPrompt) }
+                    if (retryOutput.isNotBlank()) output = retryOutput
+                    parsedAction = Regex("(?im)^\\s*ACTION\\s*:\\s*(ATTACK|SKILL|DEFEND|POTION)\\b").find(output)?.groupValues?.get(1)?.uppercase()
+                        ?: Regex("(?i)\\b(ATTACK|SKILL|DEFEND|POTION)\\b").find(output)?.groupValues?.get(1)?.uppercase()
+                } catch (_: TimeoutCancellationException) {
+                    timedOut = true
+                } catch (_: Exception) {
+                    // The fallback below keeps the battle moving if the retry also fails.
+                }
+            }
+
             withContext(Dispatchers.Main) {
                 if (screen != "battle") { busy = false; save(); return@withContext }
-                val actionMatch = Regex("(?im)^\\s*ACTION\\s*:\\s*(ATTACK|SKILL|DEFEND|POTION)\\b").find(output)
                 val targetMatch = Regex("(?im)^\\s*TARGET\\s*:\\s*(\\d+)").find(output)
                 val commentMatch = Regex("(?im)^\\s*COMMENT\\s*:\\s*(.+)$").find(output)
-                val parsedAction = actionMatch?.groupValues?.get(1)?.uppercase()
                 val parsedTarget = targetMatch?.groupValues?.get(1)?.toIntOrNull()
                 val action = parsedAction ?: fallbackGemmaAction()
                 val targetIndex = if (parsedTarget != null && (enemies.getOrNull(parsedTarget)?.hp ?: 0) > 0) parsedTarget else bestTarget()
                 val comment = commentMatch?.groupValues?.get(1)?.trim().orEmpty()
                 if (parsedAction == null) {
-                    say(if (timedOut) "Aku sempat lambat merespons—aku tetap bantu dengan aksi taktis!" else "Output model kosong, aku lanjutkan giliran dengan aksi taktis.")
-                    addLog("Gemma memakai aksi cadangan agar giliran tidak macet.")
-                } else if (comment.isNotBlank()) say(comment.take(180))
+                    say(when {
+                        !modelWasReady -> "Model Gemma belum siap, jadi sistem mengambil giliran ini."
+                        timedOut -> "Respons Gemma terlalu lama; sistem mengambil giliran ini agar battle lanjut."
+                        else -> "Gemma belum memberi aksi yang bisa dibaca setelah dicoba ulang; sistem mengambil giliran ini."
+                    })
+                    addLog("Aksi sistem (fallback); respons model tidak valid atau kosong.")
+                } else if (comment.isNotBlank()) {
+                    say(comment.take(180))
+                } else {
+                    say("Aku sudah memilih langkah. Kita lanjutkan bersama!")
+                }
                 applyGemmaAction(action, targetIndex)
                 busy = false
                 if (!checkBattleEnd()) {
