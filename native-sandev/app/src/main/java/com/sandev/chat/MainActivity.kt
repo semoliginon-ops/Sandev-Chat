@@ -687,11 +687,13 @@ class MainActivity : AppCompatActivity() {
             { engineReady && activeModelName != null && !modelLoadInProgress && generationJob?.isActive != true && !modelImportInProgress },
             { prompt ->
                 if (!engineReady || activeModelName == null) throw IllegalStateException("Pilih dan muat model GGUF terlebih dahulu.")
-                val output = StringBuilder()
-                withTimeout(45_000L) {
-                    engine.sendUserPrompt(prompt, predictLength = 128).collect { output.append(it) }
+                withContext(Dispatchers.IO) {
+                    val output = StringBuilder()
+                    withTimeout(45_000L) {
+                        engine.sendUserPrompt(prompt, predictLength = 128).collect { output.append(it) }
+                    }
+                    output.toString()
                 }
-                output.toString()
             },
             {
                 currentPage = "discover"
