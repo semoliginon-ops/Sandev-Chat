@@ -428,14 +428,14 @@ class SandevRpgGameView(
 
             // Small local models sometimes answer in free text or return an empty first generation.
             // Retry once with a shorter, action-first instruction when the first response is unusable.
-            var parsedAction = Regex("(?im)^\\s*ACTION\\s*:\\s*(ATTACK|SKILL|DEFEND|POTION)\\s*$").find(output)?.groupValues?.get(1)?.uppercase()
+            var parsedAction = GameDecisionProtocol.parseAction(output, listOf("ATTACK", "SKILL", "DEFEND", "POTION"))
             if (modelWasReady && parsedAction == null) {
                 try {
                     val retryPrompt = "Pilih aksi untuk state RPG yang baru saja diberikan. Jangan ulangi penjelasan. Balas tepat 3 baris tanpa markdown:\n" +
                         "ACTION: ATTACK / SKILL / DEFEND / POTION\nTARGET: indeks musuh hidup (0-based)\nCOMMENT: satu komentar pendek bahasa Indonesia."
                     val retryOutput = askGemma(retryPrompt)
                     if (retryOutput.isNotBlank()) output = retryOutput
-                    parsedAction = Regex("(?im)^\\s*ACTION\\s*:\\s*(ATTACK|SKILL|DEFEND|POTION)\\s*$").find(output)?.groupValues?.get(1)?.uppercase()
+                    parsedAction = GameDecisionProtocol.parseAction(output, listOf("ATTACK", "SKILL", "DEFEND", "POTION"))
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
