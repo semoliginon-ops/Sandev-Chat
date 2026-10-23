@@ -86,6 +86,8 @@ class MainActivity : AppCompatActivity() {
     private var backgroundPath: String? = null
     private var currentAssistantView: TextView? = null
     private var currentPage = "discover"
+    private var rpgModelPromptActive = false
+    private var rpgModelPromptLoading = false
     private var blackjackChips = 100
     private var blackjackDeck = mutableListOf<BlackjackCard>()
     private var blackjackPlayerHand = mutableListOf<BlackjackCard>()
@@ -681,6 +683,39 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderRpgPage() {
         header.text = "Sandev RPG"
+        if (rpgModelPromptLoading) {
+            addSectionTitle("Menyiapkan partner RPG", "Memuat instruksi keputusan untuk model lokal…")
+            return
+        }
+        val file = activeModelName?.let { modelFile(it) }
+        if (!rpgModelPromptActive && engineReady && file != null && file.exists()) {
+            if (generationJob?.isActive == true || modelLoadInProgress || modelImportInProgress) {
+                toast("Selesaikan proses model yang sedang berjalan sebelum membuka RPG.")
+                currentPage = "discover"
+                renderPage()
+                return
+            }
+            rpgModelPromptLoading = true
+            addSectionTitle("Menyiapkan partner RPG", "Memuat instruksi keputusan untuk model lokal…")
+            loadModelFile(
+                file,
+                false,
+                onReady = {
+                    rpgModelPromptLoading = false
+                    rpgModelPromptActive = true
+                    renderPage()
+                },
+                onFailure = { reason ->
+                    rpgModelPromptLoading = false
+                    rpgModelPromptActive = false
+                    currentPage = "discover"
+                    renderPage()
+                    toast("Gagal menyiapkan model RPG: $reason")
+                },
+                systemPromptOverride = rpgSystemPrompt()
+            )
+            return
+        }
         val game = SandevRpgGameView(
             this,
             lifecycleScope,
@@ -688,19 +723,45 @@ class MainActivity : AppCompatActivity() {
             { prompt ->
                 if (!engineReady || activeModelName == null) throw IllegalStateException("Pilih dan muat model GGUF terlebih dahulu.")
                 withContext(Dispatchers.IO) {
-                    val output = StringBuilder()
-                    withTimeout(45_000L) {
-                        engine.sendUserPrompt(prompt, predictLength = 128).collect { output.append(it) }
+                    if (activeModelName?.contains("qwen", ignoreCase = true) == true) {
+                        // Qwen's game turns need concise, decisive output; chat tuning is restored on exit.
+                        engine.setSamplingParams(0.25f, 0.90f, 20, 1.05f)
                     }
+                    val output = StringBuilder()
+                    engine.sendUserPrompt(prompt, predictLength = 64).collect { output.append(it) }
                     output.toString()
                 }
             },
-            {
-                currentPage = "discover"
-                renderPage()
-            }
+            { leaveRpgGame() }
         )
         chatColumn.addView(game, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+    }
+
+    private fun rpgSystemPrompt(): String =
+        "Kamu mengendalikan partner Gemma dalam RPG turn-based. Gunakan state terbaru untuk memilih aksi yang legal dan paling berguna. " +
+        "Utamakan keselamatan saat HP kritis, gunakan skill hanya jika MP cukup, dan gunakan potion hanya jika tersedia serta memang diperlukan. " +
+        "Pilih target yang masih hidup. Jangan meminta klarifikasi dan jangan menulis markdown. Jawab tepat tiga baris: " +
+        "ACTION: ATTACK atau SKILL atau DEFEND atau POTION; TARGET: indeks musuh; COMMENT: satu komentar pendek dalam bahasa Indonesia."
+
+    private fun leaveRpgGame() {
+        val restoreChatPrompt = rpgModelPromptActive
+        rpgModelPromptActive = false
+        rpgModelPromptLoading = false
+        currentPage = "discover"
+        val file = activeModelName?.let { modelFile(it) }
+        if (restoreChatPrompt && engineReady && file != null && file.exists()) {
+            loadModelFile(
+                file,
+                false,
+                onReady = { renderPage() },
+                onFailure = { reason ->
+                    renderPage()
+                    toast("Gagal memulihkan prompt chat: $reason")
+                }
+            )
+        } else {
+            renderPage()
+        }
     }
 
     private fun renderBlackjackPage() {
