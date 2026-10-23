@@ -92,14 +92,14 @@ class SandevRpgGameView(
 
     private val foeTypes = listOf(
         FoeType("Grimfang", "👹", "brute", 1.30, 1.12, 1.0, 1.0),
-        FoeType("Venom Widow", "🕷️", "poison", .88, 1.08, .8, 1.05),
-        FoeType("Ash Wraith", "👻", "drain", .92, 1.12, .9, 1.1),
-        FoeType("Ironhide", "🦏", "guard", 1.50, .95, 1.5, 1.05),
+        FoeType("Venom Widow", "🕷️", "poison", 0.88, 1.08, 0.8, 1.05),
+        FoeType("Ash Wraith", "👻", "drain", 0.92, 1.12, 0.9, 1.1),
+        FoeType("Ironhide", "🦏", "guard", 1.50, 0.95, 1.5, 1.05),
         FoeType("Cinder Drake", "🐉", "burn", 1.24, 1.28, 1.0, 1.2),
-        FoeType("Mire Stalker", "🐊", "bleed", 1.12, 1.18, .95, 1.1),
-        FoeType("Hex Shaman", "🧙", "hex", .82, 1.14, .85, 1.15),
-        FoeType("Bone Reaver", "💀", "heavy", 1.08, 1.40, .85, 1.15),
-        FoeType("Storm Talon", "🦅", "swift", .86, 1.32, .75, 1.1),
+        FoeType("Mire Stalker", "🐊", "bleed", 1.12, 1.18, 0.95, 1.1),
+        FoeType("Hex Shaman", "🧙", "hex", 0.82, 1.14, 0.85, 1.15),
+        FoeType("Bone Reaver", "💀", "heavy", 1.08, 1.40, 0.85, 1.15),
+        FoeType("Storm Talon", "🦅", "swift", 0.86, 1.32, 0.75, 1.1),
         FoeType("Dread Golem", "🗿", "guard", 1.72, 1.0, 1.55, 1.25)
     )
 
@@ -339,8 +339,8 @@ class SandevRpgGameView(
         val type = foeTypes[(number * 3 + index * 2 - 3).mod(foeTypes.size)]
         val level = min(199, max(1, number * 4 - 2 + index))
         val hp = max(35, ((55 + number * 5.5 + level * 4.0) * type.hp).toInt())
-        val attack = max(7, ((10 + number * 1.8 + level * .48) * type.atk).toInt())
-        val defense = max(1, ((2 + number * 1.4 + level * .34) * type.def).toInt())
+        val attack = max(7, ((10 + number * 1.8 + level * 0.48) * type.atk).toInt())
+        val defense = max(1, ((2 + number * 1.4 + level * 0.34) * type.def).toInt())
         val xpReward = ((55 + number * 13) * type.xp).toInt()
         return Enemy(type.name, type.emoji, type.kind, level, hp, hp, attack, defense, xpReward)
     }
