@@ -410,6 +410,7 @@ class MainActivity : AppCompatActivity() {
             "model_tune" -> renderModelTunePage()
             "music" -> renderMusicPage()
             "blackjack" -> renderBlackjackPage()
+            "rpg" -> renderRpgPage()
             "create_bot" -> renderCreateBotPage()
             "profile" -> renderUserProfile()
             else -> renderDiscover()
@@ -494,7 +495,31 @@ class MainActivity : AppCompatActivity() {
             if (!blackjackRoundActive && blackjackPlayerHand.isEmpty()) blackjackMessage = "Tekan Mulai untuk bermain."
             renderPage()
         }
-        chatColumn.addView(gameCard, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(16) })
+        chatColumn.addView(gameCard, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(12) })
+
+        val rpgCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            background = panelBackground(p.panel, Color.rgb(112, 78, 190), 18)
+        }
+        rpgCard.addView(TextView(this).apply {
+            text = "⚔️  TURN-BASED RPG"; textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD; setTextColor(Color.rgb(196, 181, 253))
+        })
+        rpgCard.addView(TextView(this).apply {
+            text = "Petualangan Player & Gemma"; textSize = 18f
+            typeface = Typeface.DEFAULT_BOLD; setTextColor(p.text)
+            setPadding(0, dp(5), 0, dp(4))
+        })
+        rpgCard.addView(TextView(this).apply {
+            text = "50 stage • Level cap 200 • Equipment, upgrade, potion, dan keputusan battle oleh Gemma AI lokal"
+            textSize = 12f; setTextColor(p.muted)
+        })
+        addAction(rpgCard, "Masuk ke RPG") {
+            currentPage = "rpg"
+            renderPage()
+        }
+        chatColumn.addView(rpgCard, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(16) })
 
         val search = EditText(this).apply {
             hint = "⌕  Cari nama atau deskripsi karakter..."
@@ -652,6 +677,28 @@ class MainActivity : AppCompatActivity() {
         })
         buildCategoryChips()
         populate("")
+    }
+
+    private fun renderRpgPage() {
+        header.text = "Sandev RPG"
+        val game = SandevRpgGameView(
+            this,
+            lifecycleScope,
+            { engineReady && activeModelName != null && !modelLoadInProgress && generationJob?.isActive != true && !modelImportInProgress },
+            { prompt ->
+                if (!engineReady || activeModelName == null) throw IllegalStateException("Pilih dan muat model GGUF terlebih dahulu.")
+                val output = StringBuilder()
+                withTimeout(45_000L) {
+                    engine.sendUserPrompt(prompt, predictLength = 128).collect { output.append(it) }
+                }
+                output.toString()
+            },
+            {
+                currentPage = "discover"
+                renderPage()
+            }
+        )
+        chatColumn.addView(game, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     }
 
     private fun renderBlackjackPage() {
