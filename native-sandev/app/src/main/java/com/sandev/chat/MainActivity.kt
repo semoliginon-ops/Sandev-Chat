@@ -73,7 +73,8 @@ class MainActivity : AppCompatActivity() {
     private var activeTuneId = "default"
     private var manualTune = SamplingTune("manual", "Manual", 0.7f, 0.9f, 40, 1.1f, 192)
     private val samplingPresets = listOf(
-        SamplingTune("qwen", "Qwen Tune", 0.7f, 0.8f, 20, 1.05f, 256),
+        // Start Qwen near PocketPal defaults; output length remains bounded for mobile UX.
+        SamplingTune("qwen", "Qwen · balanced", 0.7f, 0.95f, 40, 1.0f, 320),
         SamplingTune("gemma", "Gemma Tune", 1.0f, 0.95f, 64, 1.05f, 192),
         SamplingTune("smollm", "SmolLM Tune", 0.7f, 0.9f, 50, 1.15f, 160),
         SamplingTune("luminus", "Luminus Tune", 0.85f, 0.9f, 40, 1.10f, 320),
@@ -164,7 +165,7 @@ class MainActivity : AppCompatActivity() {
                     throw initialState.exception
                 }
                 withContext(Dispatchers.Main) {
-                    status.text = "Siap. Pilih model Q4_K_M GGUF."
+                    status.text = "Siap. Pilih model GGUF yang kompatibel."
                     engineReady = true
                     val pending = pendingModelFile
                     if (pending != null && pending.exists()) {
@@ -177,7 +178,7 @@ class MainActivity : AppCompatActivity() {
                             else status.text = "Model terakhir tidak ditemukan. Pilih model."
                         }
                     } else {
-                        status.text = "Engine siap. Pilih model untuk mulai."
+                        status.text = "Engine siap. Pilih model GGUF untuk mulai."
                     }
                 }
             } catch (e: Exception) {
@@ -192,17 +193,25 @@ class MainActivity : AppCompatActivity() {
         val palette = palettes[themeIndex]
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+            setPadding(dp(14), dp(10), dp(14), dp(8))
             setBackgroundColor(palette.background)
         }
         val top = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(10), dp(8), dp(10))
+            background = panelBackground(palette.panel, palette.muted, 20)
         }
         profileImage = ImageView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
+            layoutParams = LinearLayout.LayoutParams(dp(46), dp(46))
             scaleType = ImageView.ScaleType.CENTER_CROP
-            setBackgroundColor(palette.panel)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(palette.background)
+                setStroke(dp(2), palette.accent)
+            }
+            clipToOutline = true
+            contentDescription = "Foto karakter; ketuk untuk mengganti"
             setOnClickListener { imagePicker.launch(arrayOf("image/*")) }
         }
         top.addView(profileImage)
@@ -235,11 +244,14 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { showChatActions() }
         }
         top.addView(chatMenuButton)
-        root.addView(top)
+        root.addView(top, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            bottomMargin = dp(8)
+        })
 
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(2), dp(4), dp(2))
         }
         addAction(actions, "AI Model") { showModelMenu() }
         addAction(actions, "Model Tune") { showModelTuneMenu() }
@@ -248,15 +260,16 @@ class MainActivity : AppCompatActivity() {
 
         chatScroll = ScrollView(this).apply {
             isFillViewport = true
+            clipToPadding = false
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f).apply {
-                topMargin = dp(8)
+                topMargin = dp(6)
                 bottomMargin = dp(8)
             }
-            setBackgroundColor(palette.panel)
+            background = panelBackground(palette.panel, palette.muted, 20)
         }
         chatColumn = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(10), dp(10), dp(10))
+            setPadding(dp(12), dp(14), dp(12), dp(14))
         }
         chatScroll.addView(chatColumn)
         root.addView(chatScroll)
@@ -264,6 +277,8 @@ class MainActivity : AppCompatActivity() {
         composer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), dp(7), dp(8), dp(7))
+            background = panelBackground(palette.panel, palette.muted, 22)
         }
         input = EditText(this).apply {
             hint = "Tulis pesan..."
@@ -278,8 +293,8 @@ class MainActivity : AppCompatActivity() {
             minHeight = dp(48)
             background = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                cornerRadius = dp(14).toFloat()
-                setColor(palette.panel)
+                cornerRadius = dp(16).toFloat()
+                setColor(palette.background)
                 setStroke(dp(1), palette.muted)
             }
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
@@ -287,7 +302,15 @@ class MainActivity : AppCompatActivity() {
             }
         }
         sendButton = Button(this).apply {
-            text = "Kirim"
+            text = "Kirim  ➤"
+            textSize = 14f
+            isAllCaps = false
+            minWidth = dp(82)
+            minHeight = dp(48)
+            setTextColor(Color.WHITE)
+            background = panelBackground(palette.accent, palette.accent, 16)
+            elevation = dp(2).toFloat()
+            contentDescription = "Kirim pesan"
             setOnClickListener { sendMessage() }
         }
         input.setOnEditorActionListener { _, actionId, _ ->
@@ -321,10 +344,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun addAction(row: LinearLayout, label: String, action: () -> Unit) {
+        val p = palettes[themeIndex]
         val button = Button(this).apply {
             text = label
             textSize = 12f
+            isAllCaps = false
             minWidth = 0
+            minHeight = dp(42)
+            setTextColor(p.text)
+            background = panelBackground(p.panel, p.muted, 14)
             setPadding(dp(5), 0, dp(5), 0)
             setOnClickListener { action() }
         }
@@ -1396,7 +1424,7 @@ class MainActivity : AppCompatActivity() {
             "🎚  Model Tune (${activeTuneLabel()})",
             "⚙  Pengaturan model otomatis"
         )
-        AlertDialog.Builder(this).setTitle("AI Model · Q4_K_M")
+        AlertDialog.Builder(this).setTitle("AI Model · GGUF")
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> modelPicker.launch(arrayOf("*/*"))
@@ -1972,13 +2000,19 @@ class MainActivity : AppCompatActivity() {
         input.setHintTextColor(p.muted)
         input.background = android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-            cornerRadius = dp(14).toFloat()
-            setColor(p.panel)
+            cornerRadius = dp(16).toFloat()
+            setColor(p.background)
             setStroke(dp(1), p.muted)
         }
-        profileImage.setBackgroundColor(p.panel)
+        profileImage.background = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.OVAL
+            setColor(p.panel)
+            setStroke(dp(2), p.accent)
+        }
+        composer.background = panelBackground(p.panel, p.muted, 22)
         sendButton.setTextColor(Color.WHITE)
-        sendButton.setBackgroundTintList(android.content.res.ColorStateList.valueOf(p.accent))
+        sendButton.backgroundTintList = null
+        sendButton.background = panelBackground(p.accent, p.accent, 16)
         renderPage()
     }
 
@@ -2420,7 +2454,7 @@ class MainActivity : AppCompatActivity() {
             }
             welcome.addView(TextView(this).apply {
                 text = "✦"
-                textSize = 32f
+                textSize = 36f
                 gravity = Gravity.CENTER
                 setTextColor(p.accent)
             })
@@ -2447,11 +2481,13 @@ class MainActivity : AppCompatActivity() {
                 }
                 val bubble = TextView(this).apply {
                     text = message.text
-                    textSize = 15f
+                    textSize = 15.5f
                     setTextColor(p.text)
-                    setPadding(dp(13), dp(10), dp(13), dp(10))
-                    maxWidth = (resources.displayMetrics.widthPixels * 0.78f).toInt()
-                    background = panelBackground(if (message.role == "user") p.userBubble else p.botBubble, if (message.role == "user") p.accent else Color.rgb(53, 66, 88), 16)
+                    setPadding(dp(14), dp(11), dp(14), dp(11))
+                    setLineSpacing(dp(3).toFloat(), 1.0f)
+                    setTextIsSelectable(true)
+                    maxWidth = (resources.displayMetrics.widthPixels * 0.82f).toInt()
+                    background = panelBackground(if (message.role == "user") p.userBubble else p.botBubble, if (message.role == "user") p.accent else p.muted, 18)
                 }
                 row.addView(bubble, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
                 val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
