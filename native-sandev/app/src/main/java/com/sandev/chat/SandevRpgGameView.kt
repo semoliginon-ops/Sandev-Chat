@@ -426,10 +426,10 @@ class SandevRpgGameView(
             if (modelWasReady && parsedAction == null && !timedOut) {
                 try {
                     val retryPrompt = prompt +
-                        "\\nIMPORTANT: Your previous answer was not usable. Reply with exactly these three lines, no markdown:" +
-                        "\\nACTION: ATTACK" +
-                        "\\nTARGET: 0" +
-                        "\\nCOMMENT: one short Indonesian sentence. Use SKILL/DEFEND/POTION only when appropriate."
+                        "\nIMPORTANT: Your previous answer was not usable. Reply with exactly these three lines, no markdown:" +
+                        "\nACTION: ATTACK" +
+                        "\nTARGET: 0" +
+                        "\nCOMMENT: one short Indonesian sentence. Use SKILL/DEFEND/POTION only when appropriate."
                     val retryOutput = withTimeout(45_000L) { askGemma(retryPrompt) }
                     if (retryOutput.isNotBlank()) output = retryOutput
                     parsedAction = Regex("(?im)^\\s*ACTION\\s*:\\s*(ATTACK|SKILL|DEFEND|POTION)\\b").find(output)?.groupValues?.get(1)?.uppercase()
