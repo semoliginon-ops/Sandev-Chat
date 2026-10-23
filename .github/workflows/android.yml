@@ -2,12 +2,13 @@ name: Build Sandev Chat APK
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    branches: [main, master, 'feature/turn-based-gemma-rpg']
     paths:
       - 'sandev-chat-alpha-0.2.zip'
       - '.github/workflows/android.yml'
       - '.github/scripts/patch_gguf_loader.py'
       - '.github/scripts/patch_luna_runtime.py'
+      - '.github/scripts/inject_rpg_game.py'
       - '.github/patches/native-llama.cpp'
 permissions:
   contents: read
@@ -24,6 +25,7 @@ jobs:
           sed -i '/^    targetSdk 35$/d' source/sandev-chat/app/build.gradle
           python3 .github/scripts/patch_gguf_loader.py source/sandev-chat/app/src/main/java/com/sandev/chat/MainActivity.java
           python3 .github/scripts/patch_luna_runtime.py source/sandev-chat
+          python3 .github/scripts/inject_rpg_game.py source/sandev-chat
           echo "Build configuration:"
           cat source/sandev-chat/app/build.gradle
       - uses: actions/setup-java@v4
@@ -32,7 +34,9 @@ jobs:
           java-version: '17'
       - name: Set up Android SDK environment
         run: |
-          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SDK_ROOT="$ANDROID_HOME"
+          if [ -z "$SDK_ROOT" ]; then SDK_ROOT="$ANDROID_SDK_ROOT"; fi
+          if [ -z "$SDK_ROOT" ]; then SDK_ROOT="/usr/local/lib/android/sdk"; fi
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "$SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
