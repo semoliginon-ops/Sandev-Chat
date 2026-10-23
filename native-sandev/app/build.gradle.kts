@@ -48,4 +48,5 @@ dependencies {
     implementation(libs.bundles.androidx)
     implementation(libs.material)
     implementation(project(":llama-lib"))
+    testImplementation(libs.junit)
 }
