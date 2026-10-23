@@ -4,63 +4,47 @@ on:
   push:
     branches: [main, master, 'feature/build36-integrated-gemma-rpg']
     paths:
-      - 'sandev-chat-alpha-0.2.zip'
+      - 'native-sandev/**'
       - '.github/workflows/android.yml'
-      - '.github/scripts/patch_gguf_loader.py'
-      - '.github/scripts/patch_luna_runtime.py'
-      - '.github/scripts/inject_rpg_game.py'
-      - '.github/patches/native-llama.cpp'
 permissions:
   contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v4
-      - name: Extract Android project
-        run: |
-          test -f sandev-chat-alpha-0.2.zip
-          unzip -q sandev-chat-alpha-0.2.zip -d source
-          test -f source/sandev-chat/app/build.gradle
-          sed -i '/^    targetSdk 35$/d' source/sandev-chat/app/build.gradle
-          python3 .github/scripts/patch_gguf_loader.py source/sandev-chat/app/src/main/java/com/sandev/chat/MainActivity.java
-          python3 .github/scripts/patch_luna_runtime.py source/sandev-chat
-          python3 .github/scripts/inject_rpg_game.py source/sandev-chat
-          python3 - <<'PY'
-          from pathlib import Path
-          html = Path("source/sandev-chat/app/src/main/assets/index.html").read_text(encoding="utf-8")
-          marker = html.index("/* SANDEV_TURN_BASED_RPG_V1 */")
-          start = html.index("<script>", marker) + len("<script>")
-          end = html.index("</script>", start)
-          Path("/tmp/sandev-rpg-injected.js").write_text(html[start:end], encoding="utf-8")
-          PY
-          node --check /tmp/sandev-rpg-injected.js
-          echo "Build configuration:"
-          cat source/sandev-chat/app/build.gradle
-      - uses: actions/setup-java@v4
+      - name: Checkout Sandev Chat source
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - name: Set up Android SDK environment
-        run: |
-          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "$SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
-      - name: Install Android packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
-      - name: Install Gradle
-        run: |
-          curl -L --fail https://services.gradle.org/distributions/gradle-8.9-bin.zip -o /tmp/gradle.zip
-          unzip -q /tmp/gradle.zip -d /tmp
-          echo "/tmp/gradle-8.9/bin" >> "$GITHUB_PATH"
-      - name: Build debug APK
-        working-directory: source/sandev-chat
-        run: gradle --no-daemon assembleDebug --stacktrace
-      - uses: actions/upload-artifact@v4
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
         with:
-          name: sandev-chat-debug-apk
-          path: source/sandev-chat/app/build/outputs/apk/debug/app-debug.apk
+          packages: platform-tools
+      - name: Install Android native build tools
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+      - name: Prepare pinned llama.cpp engine
+        run: sh native-sandev/scripts/prepare-engine.sh
+      - name: Compile integrated Sandev Chat APK
+        working-directory: native-sandev
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --stacktrace assembleDebug
+      - name: Verify APK and report metadata
+        run: |
+          APK="native-sandev/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          ls -lh "$APK"
+          sha256sum "$APK"
+          echo "APK package configuration:"
+          grep -E 'applicationId|versionCode|versionName' native-sandev/app/build.gradle.kts
+      - name: Upload integrated debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandev-chat-rpg-native-debug
+          path: native-sandev/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
