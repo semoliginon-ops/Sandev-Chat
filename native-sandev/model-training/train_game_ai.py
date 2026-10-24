@@ -88,7 +88,7 @@ def make_example():
     return user, f"ACTION: {best['id']}"
 
 class GameDecisionDataset(Dataset):
-    def __init__(self, tokenizer, size=1800, max_length=512):
+    def __init__(self, tokenizer, size=600, max_length=256):
         self.rows = []
         for _ in range(size):
             user_text, answer = make_example()
@@ -136,10 +136,10 @@ def main():
     args = TrainingArguments(
         output_dir=str(OUT_DIR / "training-checkpoints"),
         num_train_epochs=1,
-        per_device_train_batch_size=2,
-        gradient_accumulation_steps=4,
+        per_device_train_batch_size=4,
+        gradient_accumulation_steps=2,
         learning_rate=2e-5,
-        warmup_ratio=0.03,
+        warmup_steps=5,
         logging_steps=20,
         save_strategy="no",
         report_to=[],
