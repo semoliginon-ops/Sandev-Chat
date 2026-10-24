@@ -20,6 +20,8 @@ OUT_DIR = Path(os.environ.get("MODEL_OUT", "artifacts/sandev-game-ai-hf"))
 SEED = 20261024
 random.seed(SEED)
 torch.manual_seed(SEED)
+# Avoid severe oversubscription on small hosted CPU runners.
+torch.set_num_threads(min(4, os.cpu_count() or 2))
 
 GENRES = [
     "turn-based RPG", "tactical strategy", "survival crafting",
