@@ -47,7 +47,6 @@ Java_com_sandev_life_LlamaNative_nativeLoadModel(JNIEnv *env, jobject, jstring j
     llama_backend_init();
 
     llama_model_params model_params = llama_model_default_params();
-    model_params.use_mmap = true;
     g_model = llama_model_load_from_file(path.c_str(), model_params);
     if (!g_model) {
         unloadLocked();
