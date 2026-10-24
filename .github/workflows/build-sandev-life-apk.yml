@@ -1,0 +1,97 @@
+name: Build SANDEV Life Android APK
+
+on:
+  push:
+    branches:
+      - feature/sandev-life-local-game
+    paths:
+      - '.github/workflows/build-sandev-life-apk.yml'
+      - 'sandev-life/**'
+      - 'android/**'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout SANDEV Life branch
+        uses: actions/checkout@v4
+
+      - name: Download the existing SANDEV Game AI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: SANDEV-Game-AI-GGUF-Q4_K_M
+          path: /tmp/sandev-model
+          repository: ${{ github.repository }}
+          run-id: 40054000856
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package web game, WebAssembly runtime, and model
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android/app/src/main/assets
+          cp sandev-life/index.html android/app/src/main/assets/index.html
+          MODEL="$(find /tmp/sandev-model -type f -name '*.gguf' -print -quit)"
+          test -n "$MODEL"
+          test -s "$MODEL"
+          SIZE="$(wc -c < "$MODEL" | tr -d ' ')"
+          echo "Bundling existing GGUF model: $SIZE bytes"
+          test "$SIZE" -le 150000000
+          cp "$MODEL" android/app/src/main/assets/model.gguf
+          npm install --prefix /tmp/wllama --no-audit --no-fund @wllama/wllama@3.12.0
+          test -s /tmp/wllama/node_modules/@wllama/wllama/esm/index.js
+          test -s /tmp/wllama/node_modules/@wllama/wllama/esm/wasm/wllama.wasm
+          mkdir -p android/app/src/main/assets/wllama
+          cp -R /tmp/wllama/node_modules/@wllama/wllama/esm android/app/src/main/assets/wllama/esm
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path("android/app/src/main/assets/index.html").read_text()
+          scripts = re.findall(r"<script type=\"module\">(.*?)</script>", html, re.S)
+          assert scripts, "No module script found in game HTML"
+          Path("/tmp/sandev-life-check.mjs").write_text(scripts[-1])
+          print("Extracted game module for JavaScript syntax validation.")
+          PY
+          node --check /tmp/sandev-life-check.mjs
+          sha256sum android/app/src/main/assets/model.gguf
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build debug APK
+        working-directory: android
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Verify APK includes model and WebAssembly runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          unzip -l "$APK" | grep -E 'assets/model.gguf'
+          unzip -l "$APK" | grep -E 'assets/wllama/esm/wasm/wllama.wasm'
+          ls -lh "$APK"
+
+      - name: Upload SANDEV Life APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SANDEV-Life-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
