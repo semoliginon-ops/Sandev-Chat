@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ggml-org/llama.cpp
-          ref: b4510
+          ref: 6b9ba4f2e8c1436511956f0b3c309e2c9e642071
           path: android/app/src/main/cpp/llama.cpp
           submodules: recursive
 
