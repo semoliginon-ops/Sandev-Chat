@@ -32,10 +32,10 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Set up Android SDK and native build tools
+      - name: Set up Android SDK, NDK, and CMake
         uses: android-actions/setup-android@v3
-      - name: Install Android NDK and CMake
-        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0 ndk;27.2.12479018 cmake;3.22.1'
 
       - name: Fetch pinned llama.cpp native engine
         shell: bash
