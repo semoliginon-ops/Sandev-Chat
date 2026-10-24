@@ -82,6 +82,8 @@ class SandevRpgGameView(
     private var selectedTarget = 0
     private var turn = 1
     private var busy = false
+    // If native inference times out/errors, stop calling the unstable engine for this battle.
+    private var modelDisabledForBattle = false
     private var playerGuarding = false
     private var gemmaGuarding = false
     private var bubble = ""
@@ -322,6 +324,7 @@ class SandevRpgGameView(
         stage = number
         turn = 1
         busy = false
+        modelDisabledForBattle = false
         playerGuarding = false
         gemmaGuarding = false
         selectedTarget = 0
@@ -446,29 +449,40 @@ class SandevRpgGameView(
             var output = ""
             var modelWasReady = false
             var timedOut = false
+            var inferenceFailed = false
             var parsedId: String? = null
             try {
-                modelWasReady = aiReady()
+                modelWasReady = aiReady() && !modelDisabledForBattle
                 if (modelWasReady && legalIds.isNotEmpty()) {
-                    output = withTimeoutOrNull(20_000L) { askGemma(prompt) }.orEmpty()
-                    timedOut = output.isBlank()
+                    // IMPORTANT: cancellation of native GGUF inference may not stop the native
+                    // worker immediately. Never launch a retry after a timeout on the same engine.
+                    val first = withTimeoutOrNull(20_000L) { askGemma(prompt) }
+                    timedOut = first == null
+                    output = first.orEmpty()
                     parsedId = GameDecisionProtocol.parseAction(output, legalIds)
+                    if (timedOut) modelDisabledForBattle = true
 
-                    // One short retry; the turn remains bounded if generation stalls.
-                    if (parsedId == null) {
+                    // Retry malformed/empty output only when inference completed normally.
+                    if (parsedId == null && !timedOut) {
                         val retryPrompt = "Choose exactly one ID from this legal list and copy it exactly.\n" +
                             legalIds.joinToString("\n") { "- $it" } +
                             "\nReturn only: ACTION: <exact ID>"
-                        val retry = withTimeoutOrNull(10_000L) { askGemma(retryPrompt) }.orEmpty()
-                        if (retry.isNotBlank()) output = retry
-                        parsedId = GameDecisionProtocol.parseAction(output, legalIds)
-                        if (parsedId == null) timedOut = timedOut || retry.isBlank()
+                        val retry = withTimeoutOrNull(10_000L) { askGemma(retryPrompt) }
+                        if (retry == null) {
+                            timedOut = true
+                            modelDisabledForBattle = true
+                        } else {
+                            if (retry.isNotBlank()) output = retry
+                            parsedId = GameDecisionProtocol.parseAction(output, legalIds)
+                        }
                     }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
                 output = ""
+                inferenceFailed = true
+                modelDisabledForBattle = true
             }
 
             withContext(Dispatchers.Main) {
@@ -511,8 +525,11 @@ class SandevRpgGameView(
 
                 if (!legal) {
                     val reason = when {
-                        !modelWasReady -> "Model belum siap"
+                        modelDisabledForBattle && (timedOut || inferenceFailed) -> "Inferensi GGUF RPG timeout/error; AI dinonaktifkan sementara untuk battle ini"
+                        !modelWasReady && !modelDisabledForBattle -> "Model belum siap"
                         timedOut -> "Respons model melewati batas waktu"
+                        inferenceFailed -> "Inferensi model gagal"
+                        modelDisabledForBattle -> "AI RPG sedang dinonaktifkan sementara"
                         else -> "ID aksi model tidak valid"
                     }
                     say("$reason; giliran diselesaikan oleh Game Brain.")
