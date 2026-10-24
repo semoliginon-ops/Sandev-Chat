@@ -7,5 +7,6 @@ internal object LlamaNative {
 
     external fun nativeLoadModel(path: String, contextSize: Int, threads: Int): String
     external fun nativeGenerate(prompt: String, maxTokens: Int): String
+    external fun nativeCancelGenerate()
     external fun nativeUnloadModel(): String
 }
