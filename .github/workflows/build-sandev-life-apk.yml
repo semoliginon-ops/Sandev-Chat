@@ -43,7 +43,7 @@ jobs:
           echo "Bundling existing GGUF model: $SIZE bytes"
           test "$SIZE" -le 150000000
           cp "$MODEL" android/app/src/main/assets/model.gguf
-          npm install --prefix /tmp/wllama --no-audit --no-fund @wllama/wllama@3.12.0
+          npm install --prefix /tmp/wllama --no-audit --no-fund @wllama/wllama@3.8.1
           test -s /tmp/wllama/node_modules/@wllama/wllama/esm/index.js
           test -s /tmp/wllama/node_modules/@wllama/wllama/esm/wasm/wllama.wasm
           mkdir -p android/app/src/main/assets/wllama
