@@ -29,7 +29,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         webView = WebView(this)
         val assetLoader = WebViewAssetLoader.Builder()
-            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .addPathHandler("/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
         webView.settings.apply {
             javaScriptEnabled = true
@@ -50,7 +50,7 @@ class MainActivity : Activity() {
             }
         }
         setContentView(webView)
-        webView.loadUrl("https://appassets.androidplatform.net/assets/index.html")
+        webView.loadUrl("https://appassets.androidplatform.net/index.html")
     }
 
     private fun emit(js: String) {
