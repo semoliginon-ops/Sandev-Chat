@@ -2,7 +2,7 @@ name: Build Sandev Chat APK
 on:
   workflow_dispatch:
   push:
-    branches: [main, master, 'feature/build36-integrated-gemma-rpg', 'feature/game-brain-generic']
+    branches: [main, master, 'feature/build36-integrated-gemma-rpg', 'feature/game-brain-generic', 'feature/sandev-game-gguf']
     paths:
       - 'native-sandev/**'
       - '.github/workflows/android.yml'
