@@ -90,6 +90,12 @@ class MainActivity : Activity() {
         }
 
         @JavascriptInterface
+        fun cancelGenerate() {
+            // This call intentionally bypasses nativeExecutor: a stuck generate() occupies that queue.
+            LlamaNative.nativeCancelGenerate()
+        }
+
+        @JavascriptInterface
         fun generate(prompt: String, maxTokens: Int, requestId: Int) {
             nativeExecutor.execute {
                 val result = LlamaNative.nativeGenerate(prompt, maxTokens)
