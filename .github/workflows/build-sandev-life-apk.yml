@@ -71,6 +71,15 @@ jobs:
           PY
           node --check /tmp/sandev-life-check.mjs
 
+      - name: Package game page into Android assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android/app/src/main/assets
+          cp sandev-life/index.html android/app/src/main/assets/index.html
+          test -s android/app/src/main/assets/index.html
+          echo "Packaged local game page: android/app/src/main/assets/index.html"
+
       - name: Build debug APK with native llama.cpp
         working-directory: android
         run: gradle --no-daemon :app:assembleDebug
@@ -81,6 +90,7 @@ jobs:
           set -euo pipefail
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
+          unzip -l "$APK" | grep -E 'assets/index\.html'
           unzip -l "$APK" | grep -E 'lib/arm64-v8a/libsandev_llama.so'
           if unzip -l "$APK" | grep -E 'assets/model\.gguf|assets/wllama/'; then
             echo "ERROR: APK must not bundle a model or Wllama runtime."
