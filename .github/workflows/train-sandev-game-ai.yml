@@ -27,7 +27,7 @@ jobs:
       - name: Install training dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install torch transformers accelerate safetensors sentencepiece
+          python -m pip install torch transformers==4.46.3 accelerate safetensors sentencepiece
 
       - name: Fine-tune SANDEV game decision model
         env:

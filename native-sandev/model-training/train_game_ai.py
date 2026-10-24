@@ -152,7 +152,7 @@ def main():
         args=args,
         train_dataset=dataset,
         data_collator=collator,
-        processing_class=tokenizer,
+        tokenizer=tokenizer,
     )
     result = trainer.train()
     model.save_pretrained(OUT_DIR, safe_serialization=True)
