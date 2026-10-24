@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import kotlin.math.max
 import kotlin.math.min
@@ -401,68 +402,131 @@ class SandevRpgGameView(
     }
 
     private fun askGemmaTurn() {
+        if (screen != "battle" || busy) return
         busy = true
         render()
-        val prompt = buildString {
-            appendLine("Kamu mengendalikan partner Gemma dalam RPG turn-based. Pilih aksi legal paling berguna berdasarkan status saat ini.")
-            appendLine("PLAYER: HP " + player.hp + "/" + player.maxHp + ", MP " + player.mp + "/" + player.maxMp + ", ATK " + player.atk + ", potion " + (smallPotions + largePotions) + ".")
-            appendLine("GEMMA: HP " + gemma.hp + "/" + gemma.maxHp + ", MP " + gemma.mp + "/" + gemma.maxMp + ", ATK " + gemma.atk + ", potion " + gemma.potions + ".")
-            appendLine("MUSUH HIDUP: " + enemies.mapIndexedNotNull { index, enemy -> if (enemy.hp > 0) "$index:${enemy.name} HP${enemy.hp}/${enemy.maxHp} ATK${enemy.atk} DEF${enemy.def} ${enemy.kind}" else null }.joinToString("; "))
-            appendLine("SKILL perlu 12 MP; POTION hanya jika stok ada dan HP perlu dipulihkan; DEFEND mengurangi damage musuh.")
-            appendLine("Balas tepat 3 baris, tanpa markdown atau penjelasan:")
-            appendLine("ACTION: ATTACK / SKILL / DEFEND / POTION")
-            appendLine("TARGET: indeks musuh hidup (0-based)")
-            appendLine("COMMENT: satu komentar pendek dalam bahasa Indonesia")
+
+        // The fine-tuned model copies a supplied legal action ID. IDs map directly
+        // to executable RPG actions and include the target where required.
+        val aliveTargets = enemies.indices.filter { enemies[it].hp > 0 }
+        val legalActions = buildList {
+            aliveTargets.forEach { index ->
+                add(GameDecisionProtocol.ActionSpec("ATTACK_$index", "serang ${enemies[index].name}"))
+                if (gemma.mp >= 12) {
+                    add(GameDecisionProtocol.ActionSpec("SKILL_$index", "gunakan skill pada ${enemies[index].name}; biaya 12 MP"))
+                }
+            }
+            add(GameDecisionProtocol.ActionSpec("DEFEND", "bertahan dan pulihkan sedikit MP"))
+            if (gemma.potions > 0 && gemma.hp < gemma.maxHp * 85 / 100) {
+                add(GameDecisionProtocol.ActionSpec("POTION_GEMMA", "pulihkan HP Gemma; potion tersedia"))
+            }
+            if (smallPotions + largePotions > 0 && player.hp < player.maxHp * 80 / 100) {
+                add(GameDecisionProtocol.ActionSpec("POTION_PLAYER", "pulihkan HP Player; potion tersedia"))
+            }
         }
+
+        val state = linkedMapOf(
+            "stage" to stage.toString(),
+            "turn" to turn.toString(),
+            "player_hp" to "${player.hp}/${player.maxHp}",
+            "player_mp" to "${player.mp}/${player.maxMp}",
+            "player_potions" to (smallPotions + largePotions).toString(),
+            "gemma_hp" to "${gemma.hp}/${gemma.maxHp}",
+            "gemma_mp" to "${gemma.mp}/${gemma.maxMp}",
+            "gemma_potions" to gemma.potions.toString(),
+            "enemies_alive" to aliveTargets.joinToString { index ->
+                "${index}:${enemies[index].name} HP ${enemies[index].hp}/${enemies[index].maxHp}, ATK ${enemies[index].atk}, DEF ${enemies[index].def}, type ${enemies[index].kind}"
+            },
+            "rule" to "Pilih hanya ID yang ada di LEGAL ACTIONS. ID serang/skill sudah menyertakan indeks target."
+        )
+        val prompt = GameDecisionProtocol.buildPrompt("turn-based-rpg", state, legalActions)
+        val legalIds = legalActions.map { it.id }
+
         decisionJob = scope.launch {
             var output = ""
             var modelWasReady = false
+            var timedOut = false
+            var parsedId: String? = null
             try {
                 modelWasReady = aiReady()
-                if (modelWasReady) output = askGemma(prompt)
+                if (modelWasReady && legalIds.isNotEmpty()) {
+                    output = withTimeoutOrNull(20_000L) { askGemma(prompt) }.orEmpty()
+                    timedOut = output.isBlank()
+                    parsedId = GameDecisionProtocol.parseAction(output, legalIds)
+
+                    // One short retry; the turn remains bounded if generation stalls.
+                    if (parsedId == null) {
+                        val retryPrompt = "Choose exactly one ID from this legal list and copy it exactly.\n" +
+                            legalIds.joinToString("\n") { "- $it" } +
+                            "\nReturn only: ACTION: <exact ID>"
+                        val retry = withTimeoutOrNull(10_000L) { askGemma(retryPrompt) }.orEmpty()
+                        if (retry.isNotBlank()) output = retry
+                        parsedId = GameDecisionProtocol.parseAction(output, legalIds)
+                        if (parsedId == null) timedOut = timedOut || retry.isBlank()
+                    }
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
                 output = ""
             }
 
-            // Small local models sometimes answer in free text or return an empty first generation.
-            // Retry once with a shorter, action-first instruction when the first response is unusable.
-            var parsedAction = GameDecisionProtocol.parseAction(output, listOf("ATTACK", "SKILL", "DEFEND", "POTION"))
-            if (modelWasReady && parsedAction == null) {
-                try {
-                    val retryPrompt = "Pilih aksi untuk state RPG yang baru saja diberikan. Jangan ulangi penjelasan. Balas tepat 3 baris tanpa markdown:\n" +
-                        "ACTION: ATTACK / SKILL / DEFEND / POTION\nTARGET: indeks musuh hidup (0-based)\nCOMMENT: satu komentar pendek bahasa Indonesia."
-                    val retryOutput = askGemma(retryPrompt)
-                    if (retryOutput.isNotBlank()) output = retryOutput
-                    parsedAction = GameDecisionProtocol.parseAction(output, listOf("ATTACK", "SKILL", "DEFEND", "POTION"))
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    // The fallback below keeps the battle moving if the model fails for a non-timeout reason.
-                }
-            }
-
             withContext(Dispatchers.Main) {
-                if (screen != "battle") { busy = false; save(); return@withContext }
-                val targetMatch = Regex("(?im)^\\s*TARGET\\s*:\\s*(\\d+)").find(output)
-                val commentMatch = Regex("(?im)^\\s*COMMENT\\s*:\\s*(.+)$").find(output)
-                val parsedTarget = targetMatch?.groupValues?.get(1)?.toIntOrNull()
-                val action = if (parsedAction != null && isGemmaActionLegal(parsedAction)) parsedAction else fallbackGemmaAction()
-                val targetIndex = if (parsedTarget != null && (enemies.getOrNull(parsedTarget)?.hp ?: 0) > 0) parsedTarget else bestTarget()
-                val comment = commentMatch?.groupValues?.get(1)?.trim().orEmpty()
-                if (parsedAction == null || !isGemmaActionLegal(parsedAction)) {
-                    say(when {
-                        !modelWasReady -> "Model Gemma belum siap, jadi sistem mengambil giliran ini."
-                        else -> "Gemma belum memberi aksi yang bisa dibaca setelah dicoba ulang; sistem mengambil giliran ini."
-                    })
-                    addLog("Aksi sistem (fallback); respons model tidak valid atau kosong.")
-                } else if (comment.isNotBlank()) {
-                    say(comment.take(180))
-                } else {
-                    say("Aku sudah memilih langkah. Kita lanjutkan bersama!")
+                if (screen != "battle") {
+                    busy = false
+                    save()
+                    return@withContext
                 }
-                applyGemmaAction(action, targetIndex)
+
+                val parsedAction: String
+                val targetIndex: Int
+                when {
+                    parsedId?.startsWith("ATTACK_") == true -> {
+                        parsedAction = "ATTACK"
+                        targetIndex = parsedId!!.removePrefix("ATTACK_").toIntOrNull()
+                            ?.takeIf { it in enemies.indices && enemies[it].hp > 0 } ?: bestTarget()
+                    }
+                    parsedId?.startsWith("SKILL_") == true -> {
+                        parsedAction = "SKILL"
+                        targetIndex = parsedId!!.removePrefix("SKILL_").toIntOrNull()
+                            ?.takeIf { it in enemies.indices && enemies[it].hp > 0 } ?: bestTarget()
+                    }
+                    parsedId == "POTION_GEMMA" || parsedId == "POTION_PLAYER" -> {
+                        parsedAction = "POTION"
+                        targetIndex = bestTarget()
+                    }
+                    parsedId == "DEFEND" -> {
+                        parsedAction = "DEFEND"
+                        targetIndex = bestTarget()
+                    }
+                    else -> {
+                        parsedAction = fallbackGemmaAction()
+                        targetIndex = bestTarget()
+                    }
+                }
+
+                val legal = parsedId != null && parsedId in legalIds && isGemmaActionLegal(parsedAction)
+                val action = if (legal) parsedAction else fallbackGemmaAction()
+                val safeTarget = if (enemies.getOrNull(targetIndex)?.hp?.let { it > 0 } == true) targetIndex else bestTarget()
+
+                if (!legal) {
+                    val reason = when {
+                        !modelWasReady -> "Model belum siap"
+                        timedOut -> "Respons model melewati batas waktu"
+                        else -> "ID aksi model tidak valid"
+                    }
+                    say("$reason; giliran diselesaikan oleh Game Brain.")
+                    addLog("Game Brain fallback: $reason.")
+                } else {
+                    say(when (action) {
+                        "SKILL" -> "Aku memilih skill pada target yang tersedia!"
+                        "POTION" -> "Aku memulihkan tim dulu, lalu kita lanjut."
+                        "DEFEND" -> "Aku bertahan untuk menjaga tim."
+                        else -> "Target terkunci. Aku menyerang sekarang!"
+                    })
+                }
+
+                applyGemmaAction(action, safeTarget)
                 busy = false
                 if (!checkBattleEnd()) {
                     enemyTurn()
