@@ -11,3 +11,5 @@ This folder builds a small **game-decision fine-tune**, then converts the result
 Honest scope: this is a prototype fine-tune of `HuggingFaceTB/SmolLM2-135M-Instruct`, not a foundation model trained from random initialization. The resulting weights are adapted using SANDEV-generated game-decision examples; merely downloading the base checkpoint would not be the output. The synthetic training labels teach a heuristic policy and do **not** establish expert gameplay. Evaluate on unseen game states and Android hardware before using it in production.
 
 The generated model binary is published as a GitHub Actions artifact rather than committed to ordinary Git history.
+
+Build workflow pins Transformers 4.46.3 to keep the training API reproducible.
