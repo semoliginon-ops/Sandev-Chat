@@ -18,109 +18,69 @@
 <div class="small" style="margin-top:12px">Aksi manual untuk pembanding:</div><div class="actions"><button data-action="eat">🍲 Makan (5)</button><button data-action="sleep">🛏️ Tidur</button><button data-action="work">🧰 Bekerja</button><button data-action="learn">📚 Belajar (3)</button><button data-action="socialize">💬 Sosial (2)</button><button data-action="rest">🌿 Istirahat</button></div>
 <div class="notice">Model GGUF dimuat oleh runtime lokal di perangkat yang sama. Jika model gagal memberi ID aksi yang legal, game menolak keputusan tersebut—tidak diam-diam menggantinya dengan heuristik.</div>
 </main><aside style="display:flex;flex-direction:column;gap:14px">
-<section class="panel"><h2>🔌 SANDEV Game AI — koneksi lokal</h2><div class="config">
-<div class="field full"><label>Endpoint lokal</label><input id="endpoint" value="http://127.0.0.1:8080/v1/chat/completions"></div>
-<div class="field"><label>Nama model</label><input id="model" value="sandev-game-ai"></div><div class="field"><label>Temperature</label><input id="temp" type="number" min="0" max="1" step=".1" value="0"></div>
-<div class="row full"><button class="primary" id="test">Tes koneksi model</button><button id="save">Simpan setelan</button></div></div><p class="small" id="connectStatus">Belum dites. Server lokal harus berjalan lebih dulu.</p><p class="small">Setiap giliran mengirim format keputusan yang dipakai saat training: state terukur + daftar legal action dengan fitur 0–1. ID kandidat dipetakan ke aksi game hanya untuk giliran tersebut.</p></section>
+<section class="panel"><h2>🧠 SANDEV Game AI — model di perangkat</h2>
+<div class="row"><button class="primary" id="loadModel">⬇ Muat model bawaan</button><button id="unloadModel" class="secondary" disabled>Hentikan model</button></div>
+<div class="track" style="height:9px;margin:12px 0"><div class="fill" id="loadProgress" style="width:0%;background:var(--cyan)"></div></div>
+<p class="status" id="connectStatus">Model GGUF disertakan di APK. Tekan “Muat model bawaan” untuk menjalankannya di HP.</p>
+<div class="metrics" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div class="metric"><strong id="runtimeState">Belum aktif</strong><span>Status runtime</span></div><div class="metric"><strong id="modelSize">±100 MB</strong><span>Model SANDEV Q4_K_M</span></div></div>
+<p class="small">Inferensi berjalan di perangkat melalui WebAssembly/llama.cpp. Tidak ada endpoint server dan tidak ada panggilan AI cloud. Proses muat model pertama dapat memerlukan RAM cukup besar.</p>
+<p class="small">Format keputusan: state terukur + daftar aksi legal; ID kandidat hanya berlaku pada giliran itu. Aksi ditolak jika respons model tidak cocok dengan kandidat legal.</p></section>
 <section class="panel"><div class="row" style="justify-content:space-between"><h2>📜 Log keputusan</h2><button class="secondary" id="clear">Bersihkan</button></div><div class="log" id="log"></div></section>
 <section class="panel"><h2>📊 Evaluasi simulasi</h2><div class="metrics" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div class="metric"><strong id="healthScore">100%</strong><span>Kesehatan</span></div><div class="metric"><strong id="knowledge">0</strong><span>Pengetahuan</span></div></div><p class="small" id="evaluation">Jalankan simulasi beberapa hari untuk mengamati ketahanan hidup dan pengelolaan sumber daya.</p><button id="export" class="secondary">⬇ Ekspor log JSON</button></section>
 </aside></div><div class="small" style="text-align:center;padding:16px">SANDEV Life berada di folder proyek terpisah. Tidak mengubah kode aplikasi SANDEV Chat dan tidak memerlukan AI cloud.</div></div>
-<script>
-(()=> {
+<script type="module">
+import { Wllama } from "./wllama/esm/index.js";
 const $=id=>document.getElementById(id);
 const names={eat:"Makan",sleep:"Tidur",work:"Bekerja",learn:"Belajar",socialize:"Bersosialisasi",rest:"Istirahat"};
 const costs={eat:5,sleep:0,work:0,learn:3,socialize:2,rest:0};
-const icons={eat:"🍲",sleep:"🛏️",work:"🧰",learn:"📚",socialize:"💬",rest:"🌿"};
-let s,logs=[],busy=false,autoTimer=null,connected=false;
-const defaults={endpoint:"http://127.0.0.1:8080/v1/chat/completions",model:"sandev-game-ai",temp:"0"};
+let s,logs=[],busy=false,autoTimer=null,model=null,connected=false,loading=false;
 function fresh(){return {day:1,hour:8,money:35,hunger:25,energy:82,health:100,mood:65,social:35,knowledge:0,actions:0,mistakes:0,lastAction:"bangun tidur",dead:false}}
 function clock(){return String(s.hour).padStart(2,"0")+":00"}
 function clamp(n){return Math.max(0,Math.min(100,n))}
-function world(){return {day:s.day,time:clock(),character:{money:s.money,hunger:s.hunger,energy:s.energy,health:s.health,mood:s.mood,social:s.social,knowledge:s.knowledge},last_action:s.lastAction}}
 function addLog(title,detail,type=""){logs.unshift({day:s.day,time:clock(),title,detail,type});if(logs.length>250)logs.pop();renderLog()}
-function renderLog(){$("log").innerHTML=logs.map(x=>'<div class="entry '+x.type+'"><div class="small">Hari '+x.day+' · '+x.time+'</div><b>'+esc(x.title)+'</b><div>'+esc(x.detail)+'</div></div>').join("")}
 function esc(v){return String(v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+function renderLog(){$("log").innerHTML=logs.map(x=>'<div class="entry '+x.type+'"><div class="small">Hari '+x.day+' · '+x.time+'</div><b>'+esc(x.title)+'</b><div>'+esc(x.detail)+'</div></div>').join("")}
 function render(){
 $("clock").textContent="Hari "+s.day+" · "+clock();$("day").textContent=s.day;$("money").textContent=s.money;$("actionsDone").textContent=s.actions;$("errors").textContent=s.mistakes;$("healthScore").textContent=s.health+"%";$("knowledge").textContent=s.knowledge;
-$("mode").textContent=connected?"Model lokal aktif":"Model belum dites";$("stateLabel").textContent=s.dead?"Karakter tumbang":busy?"AI sedang berpikir…":"Siap diamati";
+$("mode").textContent=connected?"Model lokal aktif":loading?"Memuat model…":"Model belum dimuat";$("stateLabel").textContent=s.dead?"Karakter tumbang":busy?"AI sedang berpikir…":"Siap diamati";
 $("sceneText").textContent=s.dead?"Karakter kehabisan kesehatan. Reset untuk mencoba lagi.":s.lastAction==="bangun tidur"?"Pagi tenang di Kota Sandev.":names[s.lastAction]+" selesai. Waktu terus berjalan.";
 const bars=[["Lapar",s.hunger,"#ffb65c"],["Energi",s.energy,"#74c6ff"],["Kesehatan",s.health,"#ff777e"],["Mood",s.mood,"#ce9bff"],["Sosial",s.social,"#5ce5d6"],["Pengetahuan",Math.min(100,s.knowledge*5),"#87e8a4"]];
 $("needs").innerHTML=bars.map(([n,v,c])=>'<div class="stat"><label>'+n+' <b style="float:right;color:#edf5ff">'+v+(n==="Pengetahuan"?" poin":"%")+'</b></label><div class="track"><div class="fill" style="width:'+Math.min(100,v)+'%;background:'+c+'"></div></div></div>').join("");
 $("evaluation").textContent="Hari "+s.day+", "+s.actions+" aksi, "+s.mistakes+" keputusan ditolak. "+(s.health<35?"Risiko kesehatan tinggi.":s.money<8?"Uang menipis.":"Pantau keseimbangan kebutuhan dan uang.");
 ["step","dayRun","auto"].forEach(id=>$(id).disabled=busy||s.dead);
 document.querySelectorAll("[data-action]").forEach(b=>b.disabled=busy||s.dead);
+$("loadModel").disabled=loading||connected;$("unloadModel").disabled=!connected||busy;
+$("runtimeState").textContent=connected?"Aktif":loading?"Memuat…":"Belum aktif";
 }
 function timePass(){s.hour+=2;if(s.hour>=24){s.hour-=24;s.day++}s.hunger=clamp(s.hunger+9);s.energy=clamp(s.energy-7);s.social=clamp(s.social-3);if(s.hunger>82)s.health=clamp(s.health-8);if(s.energy<12)s.health=clamp(s.health-6);if(s.health<=0){s.dead=true;addLog("Karakter tumbang","Kesehatan mencapai 0.","bad")}}
-function applyAction(a){
-if(s.dead)return false;
-if(s.money<costs[a]){s.mistakes++;addLog("Aksi tidak legal",names[a]+" ditolak: uang tidak cukup.","bad");render();return false}
-s.money-=costs[a];
-if(a==="eat"){s.hunger=clamp(s.hunger-42);s.health=clamp(s.health+5)}
-if(a==="sleep"){s.energy=clamp(s.energy+58);s.health=clamp(s.health+4);s.hunger=clamp(s.hunger+5)}
-if(a==="work"){s.money+=12+Math.floor(Math.max(0,s.energy-20)/15);s.energy=clamp(s.energy-18);s.hunger=clamp(s.hunger+12);s.mood=clamp(s.mood-4)}
-if(a==="learn"){s.knowledge++;s.energy=clamp(s.energy-12);s.mood=clamp(s.mood+3)}
-if(a==="socialize"){s.social=clamp(s.social+32);s.mood=clamp(s.mood+12);s.energy=clamp(s.energy-6)}
-if(a==="rest"){s.energy=clamp(s.energy+23);s.mood=clamp(s.mood+5);s.hunger=clamp(s.hunger+4)}
-s.actions++;s.lastAction=a;timePass();addLog(names[a], "Koin "+s.money+" · lapar "+s.hunger+" · energi "+s.energy, s.health<30?"warn":"good");render();return true
-}
-// Translate the life sim into the feature vocabulary used by the trained generic game-decision model.
-function candidateFeatures(a){
-const h=s.health/100, resources=Math.max(0,Math.min(1,s.money/60)), hunger=s.hunger/100, energy=s.energy/100, social=s.social/100, mood=s.mood/100;
-const f={progress:0.35,survival:0.2,information_gain:0.15,objective_fit:0.25,resource_cost:0.05,risk:0.1};
-if(a==="eat"){f.survival=.35+hunger*.65;f.objective_fit=.25+hunger*.7;f.resource_cost=.25;f.risk=.05;f.progress=.18}
-if(a==="sleep"){f.survival=.3+(1-energy)*.7;f.objective_fit=.2+(1-energy)*.7;f.resource_cost=.02;f.risk=.04;f.progress=.12}
-if(a==="work"){f.progress=.72;f.objective_fit=.35+(1-resources)*.6;f.survival=.12+energy*.2;f.resource_cost=.02;f.risk=.12+(1-energy)*.4}
-if(a==="learn"){f.progress=.5;f.information_gain=.8;f.objective_fit=.45;f.resource_cost=.2;f.survival=.1+energy*.2;f.risk=.12}
-if(a==="socialize"){f.progress=.22;f.information_gain=.35;f.objective_fit=.25+(1-social)*.65;f.survival=.12;f.resource_cost=.13;f.risk=.04}
-if(a==="rest"){f.survival=.25+(1-energy)*.6;f.objective_fit=.22+(1-energy)*.55;f.resource_cost=0;f.risk=.02;f.progress=.1}
-if(s.money<costs[a]){f.resource_cost=1;f.risk=.8;f.objective_fit=.02;f.progress=.01}
-if(a==="work"&&energy<.25)f.risk=.9;
-if(a==="learn"&&s.money<3)f.resource_cost=1;
-return Object.fromEntries(Object.entries(f).map(([k,v])=>[k,Math.round(Math.max(0,Math.min(1,v))*100)/100]))
-}
-function buildCandidates(){
-const pool=["eat","sleep","work","learn","socialize","rest"].filter(a=>s.money>=costs[a]);
-const count=Math.min(5,pool.length);const shuffled=pool.slice().sort(()=>Math.random()-.5).slice(0,count);
-return shuffled.map((action,i)=>({id:"act_"+[101,202,303,404,505][i],action,...candidateFeatures(action)}))
-}
-function parseAction(text,candidates){
-const m=String(text||"").match(/ACTION\s*:\s*(act_\d+)/i);if(!m)return null;
-return candidates.find(c=>c.id.toLowerCase()===m[1].toLowerCase())||null
-}
-async function infer(candidates){
-const st={health:Math.round(s.health)/100,resources:Math.round(Math.max(0,Math.min(1,s.money/60))*100)/100,threat:Math.round(Math.max(s.hunger,s.energy<35?100-s.energy:0)/100*100)/100,uncertainty:Math.round((1-Math.abs(s.mood-s.social)/100)*100)/100,objective_urgency:Math.round(Math.max(s.hunger/100,(100-s.energy)/100,(100-s.health)/100)*100)/100,turn:s.actions+1};
+function applyAction(a){if(s.dead)return false;if(s.money<costs[a]){s.mistakes++;addLog("Aksi tidak legal",names[a]+" ditolak: uang tidak cukup.","bad");render();return false} s.money-=costs[a];
+if(a==="eat"){s.hunger=clamp(s.hunger-42);s.health=clamp(s.health+5)}if(a==="sleep"){s.energy=clamp(s.energy+58);s.health=clamp(s.health+4);s.hunger=clamp(s.hunger+5)}if(a==="work"){s.money+=12+Math.floor(Math.max(0,s.energy-20)/15);s.energy=clamp(s.energy-18);s.hunger=clamp(s.hunger+12);s.mood=clamp(s.mood-4)}if(a==="learn"){s.knowledge++;s.energy=clamp(s.energy-12);s.mood=clamp(s.mood+3)}if(a==="socialize"){s.social=clamp(s.social+32);s.mood=clamp(s.mood+12);s.energy=clamp(s.energy-6)}if(a==="rest"){s.energy=clamp(s.energy+23);s.mood=clamp(s.mood+5);s.hunger=clamp(s.hunger+4)}
+s.actions++;s.lastAction=a;timePass();addLog(names[a],"Koin "+s.money+" · lapar "+s.hunger+" · energi "+s.energy,s.health<30?"warn":"good");render();return true}
+function candidateFeatures(a){const h=s.health/100,resources=Math.max(0,Math.min(1,s.money/60)),hunger=s.hunger/100,energy=s.energy/100,social=s.social/100;const f={progress:.35,survival:.2,information_gain:.15,objective_fit:.25,resource_cost:.05,risk:.1};
+if(a==="eat"){f.survival=.35+hunger*.65;f.objective_fit=.25+hunger*.7;f.resource_cost=.25;f.risk=.05;f.progress=.18}if(a==="sleep"){f.survival=.3+(1-energy)*.7;f.objective_fit=.2+(1-energy)*.7;f.resource_cost=.02;f.risk=.04;f.progress=.12}if(a==="work"){f.progress=.72;f.objective_fit=.35+(1-resources)*.6;f.survival=.12+energy*.2;f.resource_cost=.02;f.risk=.12+(1-energy)*.4}if(a==="learn"){f.progress=.5;f.information_gain=.8;f.objective_fit=.45;f.resource_cost=.2;f.survival=.1+energy*.2;f.risk=.12}if(a==="socialize"){f.progress=.22;f.information_gain=.35;f.objective_fit=.25+(1-social)*.65;f.survival=.12;f.resource_cost=.13;f.risk=.04}if(a==="rest"){f.survival=.25+(1-energy)*.6;f.objective_fit=.22+(1-energy)*.55;f.resource_cost=0;f.risk=.02;f.progress=.1}
+if(s.money<costs[a]){f.resource_cost=1;f.risk=.8;f.objective_fit=.02;f.progress=.01}if(a==="work"&&energy<.25)f.risk=.9;return Object.fromEntries(Object.entries(f).map(([k,v])=>[k,Math.round(Math.max(0,Math.min(1,v))*100)/100]))}
+function buildCandidates(){const pool=["eat","sleep","work","learn","socialize","rest"].filter(a=>s.money>=costs[a]);return pool.slice().sort(()=>Math.random()-.5).slice(0,Math.min(5,pool.length)).map((action,i)=>({id:"act_"+[101,202,303,404,505][i],action,...candidateFeatures(action)}))}
+function parseAction(text,candidates){const m=String(text||"").match(/ACTION\s*:\s*(act_\d+)/i);return m?candidates.find(c=>c.id.toLowerCase()===m[1].toLowerCase())||null:null}
+async function infer(candidates){if(!model)throw new Error("Model belum dimuat. Muat model terlebih dahulu.");
+const st={health:s.health/100,resources:Math.round(Math.max(0,Math.min(1,s.money/60))*100)/100,threat:Math.round(Math.max(s.hunger,s.energy<35?100-s.energy:0)/100*100)/100,uncertainty:Math.round((1-Math.abs(s.mood-s.social)/100)*100)/100,objective_urgency:Math.round(Math.max(s.hunger/100,(100-s.energy)/100,(100-s.health)/100)*100)/100,turn:s.actions+1};
 const legal=candidates.map(({id,progress,survival,information_gain,objective_fit,resource_cost,risk})=>({id,progress,survival,information_gain,objective_fit,resource_cost,risk}));
 const prompt="Choose the best legal action for this game state. The action feature values are normalized from 0 to 1. Prioritize survival when health is low, progress when the objective is urgent, information when uncertainty is high, and conserve resources when resources are low. Return exactly one line: ACTION: <id>.\nGame genre: resource management\nState: "+JSON.stringify(st)+"\nLegal actions: "+JSON.stringify(legal);
-const res=await fetch($("endpoint").value.trim(),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:$("model").value.trim()||"sandev-game-ai",messages:[{role:"system",content:"You are SANDEV Game AI. Select only from supplied legal actions. Never invent an action ID."},{role:"user",content:prompt}],temperature:Math.max(0,Math.min(1,Number($("temp").value)||0)),max_tokens:24})});
-if(!res.ok)throw new Error("HTTP "+res.status+": "+(await res.text()).slice(0,180));
-const data=await res.json();return data.choices?.[0]?.message?.content||data.choices?.[0]?.text||""
-}
-async function decision(){
-if(busy||s.dead)return;busy=true;render();
-try{
-const candidates=buildCandidates();if(!candidates.length)throw new Error("Tidak ada aksi legal dengan uang saat ini.");
-const raw=await infer(candidates);const picked=parseAction(raw,candidates);
-if(!picked){s.mistakes++;addLog("Keputusan model ditolak","Respons tidak cocok dengan kandidat giliran ini: "+raw,"bad");$("connectStatus").textContent="Inferensi berjalan, tetapi format/ID aksi belum valid.";return}
-addLog("SANDEV Game AI memilih "+names[picked.action],picked.id+" dipetakan ke aksi "+picked.action+". Respons: "+raw,"good");applyAction(picked.action)
-}catch(e){s.mistakes++;addLog("Inferensi gagal",e.message,"bad");$("connectStatus").textContent="Gagal: "+e.message+" · tidak ada fallback diam-diam."}
-finally{busy=false;render()}
-}
-async function test(){
-$("test").disabled=true;$("connectStatus").textContent="Memeriksa server lokal dan meminta satu keputusan uji…";
-try{const healthUrl=$("endpoint").value.trim().replace(/\/v1\/chat\/completions\/?$/,"/health");const h=await fetch(healthUrl);if(!h.ok)throw new Error("Server /health merespons HTTP "+h.status);const meta=await h.json();if(!meta.model_loaded)throw new Error("Server belum memuat model GGUF");
-const c=[{id:"act_101",action:"eat",progress:.18,survival:.9,information_gain:.1,objective_fit:.9,resource_cost:.25,risk:.05},{id:"act_202",action:"rest",progress:.1,survival:.8,information_gain:.2,objective_fit:.7,resource_cost:0,risk:.02},{id:"act_303",action:"work",progress:.8,survival:.2,information_gain:.1,objective_fit:.4,resource_cost:.02,risk:.5}];
-const raw=await infer(c);const picked=parseAction(raw,c);connected=true;$("connectStatus").textContent="Model termuat: "+(meta.model_file||meta.model)+" · respons uji: "+raw+" · "+(picked?"ID legal terdeteksi.":"ID uji belum cocok; periksa output model.");addLog("Tes inferensi",raw,picked?"good":"warn")
-}catch(e){connected=false;$("connectStatus").textContent="Gagal menghubungkan: "+e.message;addLog("Tes koneksi gagal",e.message,"bad")}
-finally{$("test").disabled=false;render()}
-}
-$("step").onclick=decision;
-$("dayRun").onclick=async()=>{const target=s.day+1;let guard=0;while(!s.dead&&s.day<target&&guard++<12){await decision()}};
-$("auto").onclick=()=>{if(autoTimer){clearInterval(autoTimer);autoTimer=null;$("auto").textContent="Auto: OFF"}else{$("auto").textContent="Auto: ON";autoTimer=setInterval(()=>{if(!busy&&!s.dead)decision()},4500)}};
+const res=await model.createChatCompletion({messages:[{role:"system",content:"You are SANDEV Game AI. Select only from supplied legal actions. Never invent an action ID. Return exactly ACTION: <id>."},{role:"user",content:prompt}],temperature:0,max_tokens:24});
+return res.choices?.[0]?.message?.content||""}
+async function decision(){if(busy||s.dead)return;if(!model){addLog("Model belum dimuat","Muat SANDEV Game AI sebelum meminta keputusan.","warn");return}busy=true;render();
+try{const candidates=buildCandidates();if(!candidates.length)throw new Error("Tidak ada aksi legal dengan uang saat ini.");const raw=await infer(candidates);const picked=parseAction(raw,candidates);if(!picked){s.mistakes++;addLog("Keputusan model ditolak","Respons tidak cocok dengan kandidat giliran ini: "+raw,"bad");$("connectStatus").textContent="Inferensi berjalan, tetapi format/ID aksi belum valid.";return}addLog("SANDEV Game AI memilih "+names[picked.action],picked.id+" dipetakan ke aksi "+picked.action+". Respons: "+raw,"good");applyAction(picked.action)}
+catch(e){s.mistakes++;addLog("Inferensi gagal",e.message,"bad");$("connectStatus").textContent="Inferensi gagal: "+e.message}
+finally{busy=false;render()}}
+async function loadModel(){if(loading||model)return;loading=true;render();$("connectStatus").textContent="Menyiapkan runtime WebAssembly…";$("loadProgress").style.width="5%";let w;
+try{w=new Wllama({default:"./wllama/esm/wasm/wllama.wasm"});w.setProgressCallback?.(p=>{if(p&&p.loaded&&p.total)$("loadProgress").style.width=Math.max(5,Math.min(95,Math.round(p.loaded/p.total*100)))});
+$("connectStatus").textContent="Membaca model bawaan dari APK (sekitar 100 MB)…";const response=await fetch("./model.gguf");if(!response.ok)throw new Error("Model bawaan tidak ditemukan (HTTP "+response.status+")");const blob=await response.blob();const file=new File([blob],"SANDEV-Game-AI-Q4_K_M.gguf",{type:"application/octet-stream"});$("connectStatus").textContent="Memuat model ke memori HP…";$("loadProgress").style.width="20%";
+await w.loadModel([file],{n_ctx:1024,n_threads:2});model=w;connected=true;$("loadProgress").style.width="100%";$("connectStatus").textContent="SANDEV Game AI berhasil dimuat di perangkat ini. Inferensi berlangsung lokal.";addLog("Model lokal aktif","GGUF dimuat ke runtime WebAssembly; tidak memakai AI cloud.","good");
+}catch(e){try{await w?.exit?.()}catch{}model=null;connected=false;$("loadProgress").style.width="0%";$("connectStatus").textContent="Gagal memuat model: "+(e?.message||String(e))+" · coba tutup aplikasi lain lalu ulangi.";addLog("Model gagal dimuat",e?.message||String(e),"bad")}
+finally{loading=false;render()}}
+$("step").onclick=decision;$("dayRun").onclick=async()=>{const target=s.day+1;let guard=0;while(!s.dead&&s.day<target&&guard++<12){await decision()}};$("auto").onclick=()=>{if(autoTimer){clearInterval(autoTimer);autoTimer=null;$("auto").textContent="Auto: OFF"}else{$("auto").textContent="Auto: ON";autoTimer=setInterval(()=>{if(!busy&&!s.dead)decision()},4500)}};
 $("reset").onclick=()=>{if(autoTimer){clearInterval(autoTimer);autoTimer=null;$("auto").textContent="Auto: OFF"}s=fresh();logs=[];addLog("Dunia baru","Karakter siap memulai hidup.","good");render()};
 document.querySelectorAll("[data-action]").forEach(b=>b.onclick=()=>{if(!busy&&!s.dead)applyAction(b.dataset.action)});
-$("test").onclick=test;$("save").onclick=()=>{localStorage.setItem("sandevLifeConfig",JSON.stringify({endpoint:$("endpoint").value,model:$("model").value,temp:$("temp").value}));$("connectStatus").textContent="Setelan disimpan di browser ini."};
-$("clear").onclick=()=>{logs=[];renderLog()};$("export").onclick=()=>{const blob=new Blob([JSON.stringify({state:s,logs},null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="sandev-life-log.json";a.click();URL.revokeObjectURL(a.href)};
-try{const cfg=JSON.parse(localStorage.getItem("sandevLifeConfig")||"null");if(cfg){$("endpoint").value=cfg.endpoint||defaults.endpoint;$("model").value=cfg.model||defaults.model;$("temp").value=cfg.temp??defaults.temp}}catch{}
-s=fresh();addLog("Dunia siap","Tes koneksi untuk memastikan model lokal dapat mengambil keputusan.","");render();
-})();
+$("loadModel").onclick=loadModel;$("unloadModel").onclick=async()=>{if(busy||!model)return;try{await model.exit?.()}catch{}model=null;connected=false;$("loadProgress").style.width="0%";$("connectStatus").textContent="Model dihentikan. Muat lagi kapan saja.";addLog("Model dihentikan","Runtime lokal dilepas dari sesi.","warn");render()};
+$("clear").onclick=()=>{logs=[];renderLog()};$("export").onclick=()=>{const blob=new Blob([JSON.stringify({state:s,logs},null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="sandev-life-log.json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
+s=fresh();addLog("Dunia siap","Muat model SANDEV Game AI untuk memulai simulasi.","");render();
 </script></body></html>
