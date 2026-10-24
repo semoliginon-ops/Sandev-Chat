@@ -41,8 +41,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git clone https://github.com/ggml-org/llama.cpp.git android/app/src/main/cpp/llama.cpp
-          git -C android/app/src/main/cpp/llama.cpp checkout 6b9ba4f2e8c1436511956f0b3c309e2c9e642071
+          mkdir -p android/app/src/main/cpp/llama.cpp
+          git -C android/app/src/main/cpp/llama.cpp init
+          git -C android/app/src/main/cpp/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C android/app/src/main/cpp/llama.cpp fetch --depth 1 origin 6b9ba4f2e8c1436511956f0b3c309e2c9e642071
+          git -C android/app/src/main/cpp/llama.cpp checkout --detach FETCH_HEAD
           test -s android/app/src/main/cpp/llama.cpp/include/llama.h
           echo "Using llama.cpp commit $(git -C android/app/src/main/cpp/llama.cpp rev-parse --short HEAD)"
 
