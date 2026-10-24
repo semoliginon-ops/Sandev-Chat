@@ -1,27 +1,20 @@
-# SANDEV Life — Local Model Game
+# SANDEV Life — AI Living World
 
-SANDEV Life is a separate life-simulation prototype in this branch. It loads the existing **SANDEV Game AI GGUF** locally; it does not call a hosted AI service and does not change SANDEV Chat application code.
+SANDEV Life is a separate Android life-simulation game. The Android APK bundles the existing **SANDEV Game AI GGUF Q4_K_M** and the Wllama WebAssembly runtime. Model inference is designed to run locally on the Android device; the game does not call a hosted AI service and does not modify the SANDEV Chat application on `main`.
 
-## Run on a computer
+## Android APK
 
-1. Download the existing Actions artifact named **SANDEV-Game-AI-GGUF-Q4_K_M** from the previously completed training run and extract `SANDEV-Game-AI-Q4_K_M.gguf`.
-2. Install Python 3.10+.
-3. From this folder, run `start_windows.bat` on Windows, or `./start_local.sh /full/path/to/SANDEV-Game-AI-Q4_K_M.gguf` on Linux/macOS.
-4. The first launch installs `llama-cpp-python` if it is missing, then loads the model into local RAM.
-5. Open **http://127.0.0.1:8080** on the same device and click **Tes koneksi model**.
+The branch's GitHub Actions workflow builds an installable debug APK and uploads it as an artifact named **SANDEV-Life-APK**. The build packages the existing model from successful workflow run [#6](https://github.com/semoliginon-ops/Sandev-Chat/actions/runs/40054000856); it does not retrain the model. The APK artifact is retained for 30 days.
 
-The GGUF artifact is not committed to Git because it is a generated binary. It remains in GitHub Actions artifacts until its expiration date; download it before it expires.
+The app includes a model-load button. Loading the GGUF model allocates device memory and can take some time; performance depends on the Android phone and WebView version. The APK is large because it includes the model file.
 
-## How actions work
+## How decisions work
 
-The training script teaches a general decision protocol: the model receives a game state and a list of legal candidate actions with normalized features, then returns `ACTION: <id>`. Each game turn builds a fresh candidate list and maps the selected candidate ID to the corresponding in-game action. The game validates the returned ID before applying it. This avoids incorrectly assuming that a particular ID such as `act_202` always means “eat” or “sleep”.
+Each turn, the game constructs a fresh set of legal actions and features, sends the measured state and candidates to SANDEV Game AI, and accepts only a returned candidate ID that belongs to that turn. Invalid or malformed responses are rejected rather than silently replaced with a game-side heuristic.
 
-The prototype translates life-simulation needs into the trained model's generic fields (health, resources, threat, uncertainty, objective urgency). Candidate features are transparent game-side estimates. They are not additional model training.
+## Honest limitations
 
-## Important limitations
-
-- This is a prototype. The original model was trained on synthetic, heuristic-labelled game decisions across several game genres, not specifically on life-simulation trajectories.
-- It must be benchmarked across multiple simulated days; model output may be poor or malformed.
-- The runtime is local to the computer running the server. Opening this page on a different device does not make the model run on that device.
-- If `llama-cpp-python` cannot install a compatible wheel on your operating system, install a compatible runtime/build for your Python version as described by the package documentation.
-- No GitHub Actions workflow is needed to run the game.
+- The existing model was trained on synthetic, heuristic-labelled game decisions across several genres, not a dedicated life-simulation dataset. Its behavior must be evaluated over multiple days and may be inconsistent.
+- The Android build packages the model and runtime, but a successful build alone does not prove good gameplay decisions or performance on every phone.
+- The model artifact expires on GitHub 23 November 2026 unless renewed; builds need that artifact to remain available.
+- The project remains on `feature/sandev-life-local-game`. Do not merge it into `main` unless explicitly requested.
